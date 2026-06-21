@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CINESYS 라이브러리 — 프리뷰</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&family=Noto+Sans+KR:wght@300;400;500&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f5f1ea;
+      --card-bg: #fffdf9;
+      --text: #2c2c2c;
+      --text-muted: #7a7a7a;
+      --sepia: #b8854f;
+      --mustard: #c4a155;
+      --sage: #7a8c6f;
+      --border: #e8e0d5;
+      --shadow: 0 2px 10px rgba(44,44,44,0.09);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Noto Sans KR', sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    .site-header {
+      background: var(--text);
+      padding: 1.4rem 2rem 1.1rem;
+      text-align: center;
+    }
+    .site-header h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.9rem;
+      color: var(--bg);
+      letter-spacing: 0.15em;
+    }
+    .site-header p {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 0.62rem;
+      letter-spacing: 0.35em;
+      color: var(--mustard);
+      margin-top: 0.25rem;
+    }
+
+    /* ── Nav ── */
+    .nav-wrap {
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .tabs { display: flex; }
+    .tab {
+      padding: 0.95rem 1.4rem;
+      border: none; background: none;
+      font-family: 'Noto Sans KR', sans-serif;
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab.active { color: var(--text); border-bottom-color: var(--sepia); font-weight: 500; }
+    .tab-dim { opacity: 0.32; pointer-events: none; }
+
+    /* ── Container ── */
+    .lib-wrap {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 2.2rem 1.5rem 4rem;
+    }
+
+    /* ── Preview notice ── */
+    .preview-notice {
+      display: flex; align-items: center; gap: 0.5rem;
+      background: #fffbe6; border: 1px solid var(--mustard);
+      border-radius: 6px; padding: 0.65rem 1.1rem;
+      margin-bottom: 2rem;
+      font-size: 0.76rem; color: #6b4d00;
+    }
+
+    /* ── Header row ── */
+    .lib-header {
+      display: flex; align-items: center; gap: 0.8rem;
+      margin-bottom: 1.8rem;
+    }
+    .lib-title {
+      font-family: 'Noto Serif KR', serif;
+      font-size: 1.3rem; font-weight: 700;
+    }
+    .lib-count {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 0.68rem; letter-spacing: 0.08em; color: var(--text-muted);
+    }
+    .lib-actions { margin-left: auto; display: flex; gap: 0.5rem; align-items: center; }
+
+    .btn-ghost {
+      display: inline-flex; align-items: center; gap: 0.3rem;
+      padding: 0.42rem 0.85rem;
+      border: 1px solid var(--border); border-radius: 5px; background: none;
+      font-family: 'Montserrat', sans-serif; font-size: 0.68rem;
+      color: var(--text-muted); cursor: pointer; transition: all 0.15s;
+    }
+    .btn-ghost:hover { border-color: var(--text); color: var(--text); }
+
+    .btn-dark {
+      display: inline-flex; align-items: center; gap: 0.3rem;
+      padding: 0.42rem 0.95rem;
+      border: none; border-radius: 5px;
+      background: var(--text); color: var(--bg);
+      font-family: 'Montserrat', sans-serif; font-size: 0.68rem; font-weight: 600;
+      cursor: pointer; letter-spacing: 0.04em; transition: opacity 0.15s;
+    }
+    .btn-dark:hover { opacity: 0.75; }
+
+    /* ── 5-column grid ── */
+    .movie-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 1.2rem;
+    }
+
+    /* ── Movie card ── */
+    .movie-card {
+      background: var(--card-bg);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      transition: transform 0.2s, box-shadow 0.2s;
+      cursor: pointer;
+    }
+    .movie-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 24px rgba(44,44,44,0.14);
+    }
+
+    /* Poster */
+    .poster {
+      position: relative;
+      aspect-ratio: 2/3;
+      overflow: hidden;
+    }
+    .poster-img {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .poster-bg {
+      width: 100%; height: 100%;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 0.6rem; text-align: center; padding: 1rem;
+    }
+    .poster-icon { font-size: 1.7rem; opacity: 0.7; }
+    .poster-name {
+      font-family: 'Noto Serif KR', serif;
+      font-size: 0.82rem; font-weight: 600;
+      color: white; line-height: 1.4;
+    }
+    .poster-orig {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 0.52rem; letter-spacing: 0.1em;
+      color: rgba(255,255,255,0.6);
+    }
+
+    /* EP badge */
+    .ep-badge {
+      position: absolute; top: 0.5rem; right: 0.5rem;
+      background: rgba(184,133,79,0.9); color: white;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 0.55rem; font-weight: 600; letter-spacing: 0.07em;
+      padding: 0.2rem 0.42rem; border-radius: 3px;
+    }
+
+    /* Card body */
+    .card-body { padding: 0.8rem 0.85rem 0.9rem; }
+
+    .card-date {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 0.58rem; color: var(--text-muted);
+      letter-spacing: 0.08em; margin-bottom: 0.28rem;
+    }
+    .card-title {
+      font-family: 'Noto Serif KR', serif;
+      font-size: 0.88rem; font-weight: 700;
+      line-height: 1.3; margin-bottom: 0.6rem;
+    }
+
+    /* Stats */
+    .card-stats {
+      display: flex; flex-direction: column;
+      gap: 0.22rem; margin-bottom: 0.65rem;
+    }
+    .stat-row {
+      display: flex; align-items: center; gap: 0.4rem;
+    }
+    .stat-label {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 0.57rem; letter-spacing: 0.06em;
+      color: var(--text-muted); min-width: 28px;
+    }
+    .stars { font-size: 0.62rem; }
+    .s-on  { color: var(--mustard); }
+    .s-off { color: #ddd; }
+    .rating-val {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 0.7rem; font-weight: 600; color: var(--text);
+    }
+    .audience-val {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 0.65rem; font-weight: 500; color: var(--text);
+    }
+
+    /* Auto badges */
+    .auto-tmdb {
+      display: inline-flex; align-items: center;
+      padding: 0.1rem 0.32rem;
+      background: #e8f0fd; border: 1px solid #b8cef5;
+      border-radius: 3px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 0.5rem; font-weight: 700;
+      color: #2d5fbd; letter-spacing: 0.04em;
+    }
+    .auto-kobis {
+      display: inline-flex; align-items: center;
+      padding: 0.1rem 0.32rem;
+      background: #edf5ed; border: 1px solid #b0d4b0;
+      border-radius: 3px;
+      font-family: 'Montserrat', sans-serif;
+      font-size: 0.5rem; font-weight: 700;
+      color: #2a6b2a; letter-spacing: 0.04em;
+    }
+
+    /* Reviewer chip */
+    .reviewer-tag {
+      display: inline-flex; align-items: center; gap: 0.25rem;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 20px; padding: 0.2rem 0.5rem;
+      font-size: 0.65rem; color: var(--text-muted);
+      margin-bottom: 0.7rem;
+    }
+    .r-dot {
+      width: 5px; height: 5px;
+      background: var(--sage); border-radius: 50%;
+      display: inline-block; flex-shrink: 0;
+    }
+
+    /* EP link button */
+    .ep-btn {
+      display: flex; align-items: center; justify-content: center; gap: 0.3rem;
+      width: 100%; padding: 0.46rem;
+      background: none; border: 1px solid var(--sepia);
+      border-radius: 5px; color: var(--sepia);
+      font-family: 'Montserrat', sans-serif;
+      font-size: 0.62rem; font-weight: 600; letter-spacing: 0.04em;
+      text-decoration: none; cursor: pointer; transition: all 0.18s;
+    }
+    .ep-btn:hover { background: var(--sepia); color: white; }
+    .ep-btn.pending {
+      border-color: var(--border); color: var(--text-muted); opacity: 0.45; pointer-events: none;
+    }
+
+    @media (max-width: 900px) {
+      .movie-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 560px) {
+      .movie-grid { grid-template-columns: repeat(2, 1fr); gap: 0.8rem; }
+      .lib-wrap { padding: 1.5rem 1rem 3rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="site-header">
+  <h1>CINESYS</h1>
+  <p>CINEMA CLUB · LIBRARY</p>
+</header>
+
+<div class="nav-wrap">
+  <nav class="tabs">
+    <button class="tab tab-dim">이달의 활동</button>
+    <button class="tab tab-dim">정산</button>
+    <button class="tab active">라이브러리</button>
+    <button class="tab tab-dim">멤버 관리</button>
+  </nav>
+</div>
+
+<main class="lib-wrap">
+
+  <div class="preview-notice">
+    ✦ &nbsp;프리뷰 — 샘플 데이터로 레이아웃을 확인하는 화면입니다.
+  </div>
+
+  <div class="lib-header">
+    <h2 class="lib-title">영화 라이브러리</h2>
+    <span class="lib-count">10 FILMS</span>
+    <div class="lib-actions">
+      <button class="btn-ghost">최신순 ▾</button>
+      <button class="btn-dark">＋ 영화 등록</button>
+    </div>
+  </div>
+
+  <div class="movie-grid">
+
+    <!-- 1. 미키 17 -->
+    <div class="movie-card">
+      <div class="poster">
+        <div class="poster-bg" style="background:linear-gradient(150deg,#1a1a2e 0%,#16213e 60%,#0f3460 100%)">
+          <span class="poster-icon">🎬</span>
+          <span class="poster-name">미키 17</span>
+          <span class="poster-orig">MICKEY 17 · 2025</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-date">2026 · 05 MAY</div>
+        <div class="card-title">미키 17</div>
+        <div class="card-stats">
+          <div class="stat-row">
+            <span class="stat-label">평점</span>
+            <span class="stars"><span class="s-on">★★★★</span><span class="s-off">★</span></span>
+            <span class="rating-val">7.8</span>
+            <span class="auto-tmdb">TMDB</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">관객</span>
+            <span class="audience-val">1,840,229</span>
+            <span class="auto-kobis">KOBIS</span>
+          </div>
+        </div>
+        <div class="reviewer-tag"><span class="r-dot"></span>후기 · 정다연</div>
+        <a class="ep-btn pending">EP 링크 미등록</a>
+      </div>
+    </div>
+
+    <!-- 2. 오펜하이머 -->
+    <div class="movie-card">
+      <div class="poster">
+        <div class="poster-bg" style="background:linear-gradient(150deg,#0d1b2a 0%,#1b3a5c 100%)">
+          <span class="poster-icon">🎬</span>
+          <span class="poster-name">오펜하이머</span>
+          <span class="poster-orig">OPPENHEIMER · 2023</span>
+        </div>
+        <span class="ep-badge">EP 후기 ↗</span>
+      </div>
+      <div class="card-body">
+        <div class="card-date">2026 · 05 MAY</div>
+        <div class="card-title">오펜하이머</div>
+        <div class="card-stats">
+          <div class="stat-row">
+            <span class="stat-label">평점</span>
+            <span class="stars"><span class="s-on">★★★★★</span></span>
+            <span class="rating-val">9.0</span>
+            <span class="auto-tmdb">TMDB</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">관객</span>
+            <span class="audience-val">3,294,407</span>
+            <span class="auto-kobis">KOBIS</span>
+          </div>
+        </div>
+        <div class="reviewer-tag"><span class="r-dot"></span>후기 · 이지은</div>
+        <a class="ep-btn" href="#">EP 후기 보러가기 ↗</a>
+      </div>
+    </div>
+
+    <!-- 3. 패스트 라이브즈 -->
+    <div class="movie-card">
+      <div class="poster">
+        <div class="poster-bg" style="background:linear-gradient(150deg,#3a2010 0%,#7a4a2a 100%)">
+          <span class="poster-icon">🎬</span>
+          <span class="poster-name">패스트 라이브즈</span>
+          <span class="poster-orig">PAST LIVES · 2023</span>
+        </div>
+        <span class="ep-badge">EP 후기 ↗</span>
+      </div>
+      <div class="card-body">
+        <div class="card-date">2026 · 04 APR</div>
+        <div class="card-title">패스트 라이브즈</div>
+        <div class="card-stats">
+          <div class="stat-row">
+            <span class="stat-label">평점</span>
+            <span class="stars"><span class="s-on">★★★★</span><span class="s-off">★</span></span>
+            <span class="rating-val">8.7</span>
+            <span class="auto-tmdb">TMDB</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">관객</span>
+            <span class="audience-val">248,312</span>
+            <span class="auto-kobis">KOBIS</span>
+          </div>
+        </div>
+        <div class="reviewer-tag"><span class="r-dot"></span>후기 · 박서연</div>
+        <a class="ep-btn" href="#">EP 후기 보러가기 ↗</a>
+      </div>
+    </div>
+
+    <!-- 4. 드라이브 마이 카 -->
+    <div class="movie-card">
+      <div class="poster">
+        <div class="poster-bg" style="background:linear-gradient(150deg,#0e1f30 0%,#1e3d5c 100%)">
+          <span class="poster-icon">🎬</span>
+          <span class="poster-name">드라이브 마이 카</span>
+          <span class="poster-orig">DRIVE MY CAR · 2021</span>
+        </div>
+        <span class="ep-badge">EP 후기 ↗</span>
+      </div>
+      <div class="card-body">
+        <div class="card-date">2026 · 03 MAR</div>
+        <div class="card-title">드라이브 마이 카</div>
+        <div class="card-stats">
+          <div class="stat-row">
+            <span class="stat-label">평점</span>
+            <span class="stars"><span class="s-on">★★★★★</span></span>
+            <span class="rating-val">9.1</span>
+            <span class="auto-tmdb">TMDB</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">관객</span>
+            <span class="audience-val">53,481</span>
+            <span class="auto-kobis">KOBIS</span>
+          </div>
+        </div>
+        <div class="reviewer-tag"><span class="r-dot"></span>후기 · 김민준</div>
+        <a class="ep-btn" href="#">EP 후기 보러가기 ↗</a>
+      </div>
+    </div>
+
+    <!-- 5. 코다 -->
+    <div class="movie-card">
+      <div class="poster">
+        <div class="poster-bg" style="background:linear-gradient(150deg,#162410 0%,#2e4d1e 100%)">
+          <span class="poster-icon">🎬</span>
+          <span class="poster-name">코다</span>
+          <span class="poster-orig">CODA · 2021</span>
+        </div>
+        <span class="ep-badge">EP 후기 ↗</span>
+      </div>
+      <div class="card-body">
+        <div class="card-date">2026 · 02 FEB</div>
+        <div class="card-title">코다</div>
+        <div class="card-stats">
+          <div class="stat-row">
+            <span class="stat-label">평점</span>
+            <span class="stars"><span class="s-on">★★★★</span><span class="s-off">★</span></span>
+            <span class="rating-val">8.3</span>
+            <span class="auto-tmdb">TMDB</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">관객</span>
+            <span class="audience-val">102,774</span>
+            <span class="auto-kobis">KOBIS</span>
+          </div>
+        </div>
+        <div class="reviewer-tag"><span class="r-dot"></span>후기 · 최수민</div>
+        <a class="ep-btn" href="#">EP 후기 보러가기 ↗</a>
+      </div>
+    </div>
+
+    <!-- 6. 소울 -->
+    <div class="movie-card">
+      <div class="poster">
+        <div class="poster-bg" style="background:linear-gradient(150deg,#20103a 0%,#3d1f70 100%)">
+          <span class="poster-icon">🎬</span>
+          <span class="poster-name">소울</span>
+          <span class="poster-orig">SOUL · 2020</span>
+        </div>
+        <span class="ep-badge">EP 후기 ↗</span>
+      </div>
+      <div class="card-body">
+        <div class="card-date">2026 · 01 JAN</div>
+        <div class="card-title">소울</div>
+        <div class="card-stats">
+          <div class="stat-row">
+            <span class="stat-label">평점</span>
+            <span class="stars"><span class="s-on">★★★★</span><span class="s-off">★</span></span>
+            <span class="rating-val">8.9</span>
+            <span class="auto-tmdb">TMDB</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">관객</span>
+            <span class="audience-val">1,204,398</span>
+            <span class="auto-kobis">KOBIS</span>
+          </div>
+        </div>
+        <div class="reviewer-tag"><span class="r-dot"></span>후기 · 한지원</div>
+        <a class="ep-btn" href="#">EP 후기 보러가기 ↗</a>
+      </div>
+    </div>
+
+    <!-- 7. 헤어질 결심 -->
+    <div class="movie-card">
+      <div class="poster">
+        <div class="poster-bg" style="background:linear-gradient(150deg,#2a1a3a 0%,#4d2a6b 100%)">
+          <span class="poster-icon">🎬</span>
+          <span class="poster-name">헤어질 결심</span>
+          <span class="poster-orig">DECISION TO LEAVE · 2022</span>
+        </div>
+        <span class="ep-badge">EP 후기 ↗</span>
+      </div>
+      <div class="card-body">
+        <div class="card-date">2025 · 12 DEC</div>
+        <div class="card-title">헤어질 결심</div>
+        <div class="card-stats">
+          <div class="stat-row">
+            <span class="stat-label">평점</span>
+            <span class="stars"><span class="s-on">★★★★★</span></span>
+            <span class="rating-val">9.2</span>
+            <span class="auto-tmdb">TMDB</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">관객</span>
+            <span class="audience-val">1,182,375</span>
+            <span class="auto-kobis">KOBIS</span>
+          </div>
+        </div>
+        <div class="reviewer-tag"><span class="r-dot"></span>후기 · 오서준</div>
+        <a class="ep-btn" href="#">EP 후기 보러가기 ↗</a>
+      </div>
+    </div>
+
+    <!-- 8. 브로커 -->
+    <div class="movie-card">
+      <div class="poster">
+        <div class="poster-bg" style="background:linear-gradient(150deg,#1a2a1a 0%,#2d4d2d 100%)">
+          <span class="poster-icon">🎬</span>
+          <span class="poster-name">브로커</span>
+          <span class="poster-orig">BROKER · 2022</span>
+        </div>
+        <span class="ep-badge">EP 후기 ↗</span>
+      </div>
+      <div class="card-body">
+        <div class="card-date">2025 · 11 NOV</div>
+        <div class="card-title">브로커</div>
+        <div class="card-stats">
+          <div class="stat-row">
+            <span class="stat-label">평점</span>
+            <span class="stars"><span class="s-on">★★★★</span><span class="s-off">★</span></span>
+            <span class="rating-val">8.4</span>
+            <span class="auto-tmdb">TMDB</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">관객</span>
+            <span class="audience-val">874,024</span>
+            <span class="auto-kobis">KOBIS</span>
+          </div>
+        </div>
+        <div class="reviewer-tag"><span class="r-dot"></span>후기 · 윤채은</div>
+        <a class="ep-btn" href="#">EP 후기 보러가기 ↗</a>
+      </div>
+    </div>
+
+    <!-- 9. 기생충 -->
+    <div class="movie-card">
+      <div class="poster">
+        <div class="poster-bg" style="background:linear-gradient(150deg,#1a1a10 0%,#3a3a1a 100%)">
+          <span class="poster-icon">🎬</span>
+          <span class="poster-name">기생충</span>
+          <span class="poster-orig">PARASITE · 2019</span>
+        </div>
+        <span class="ep-badge">EP 후기 ↗</span>
+      </div>
+      <div class="card-body">
+        <div class="card-date">2025 · 10 OCT</div>
+        <div class="card-title">기생충</div>
+        <div class="card-stats">
+          <div class="stat-row">
+            <span class="stat-label">평점</span>
+            <span class="stars"><span class="s-on">★★★★★</span></span>
+            <span class="rating-val">9.5</span>
+            <span class="auto-tmdb">TMDB</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">관객</span>
+            <span class="audience-val">10,085,275</span>
+            <span class="auto-kobis">KOBIS</span>
+          </div>
+        </div>
+        <div class="reviewer-tag"><span class="r-dot"></span>후기 · 강태양</div>
+        <a class="ep-btn" href="#">EP 후기 보러가기 ↗</a>
+      </div>
+    </div>
+
+    <!-- 10. 버닝 -->
+    <div class="movie-card">
+      <div class="poster">
+        <div class="poster-bg" style="background:linear-gradient(150deg,#2a1010 0%,#5c1f1f 100%)">
+          <span class="poster-icon">🎬</span>
+          <span class="poster-name">버닝</span>
+          <span class="poster-orig">BURNING · 2018</span>
+        </div>
+        <span class="ep-badge">EP 후기 ↗</span>
+      </div>
+      <div class="card-body">
+        <div class="card-date">2025 · 09 SEP</div>
+        <div class="card-title">버닝</div>
+        <div class="card-stats">
+          <div class="stat-row">
+            <span class="stat-label">평점</span>
+            <span class="stars"><span class="s-on">★★★★</span><span class="s-off">★</span></span>
+            <span class="rating-val">8.6</span>
+            <span class="auto-tmdb">TMDB</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">관객</span>
+            <span class="audience-val">354,661</span>
+            <span class="auto-kobis">KOBIS</span>
+          </div>
+        </div>
+        <div class="reviewer-tag"><span class="r-dot"></span>후기 · 임소라</div>
+        <a class="ep-btn" href="#">EP 후기 보러가기 ↗</a>
+      </div>
+    </div>
+
+  </div><!-- /movie-grid -->
+
+</main>
+</body>
+</html>

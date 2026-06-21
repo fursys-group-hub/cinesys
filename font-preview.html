@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>폰트 비교 — 씨네시스</title>
+<!-- Pretendard -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<!-- SUIT -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/suit-font@1.0.0/SUIT.css">
+<!-- Noto Sans KR + Noto Serif KR + Montserrat + Playfair (현재) -->
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&family=Playfair+Display:wght@500;700&family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --cream:#f5f1ea; --paper:#ffffff; --paper2:#faf6ef; --cream2:#ede6d5;
+    --ink:#2c2c2c; --ink2:#555555; --ink3:#8a8377;
+    --line:#e5dfd2; --line2:#d4ccb8;
+    --sepia:#b8854f; --sepia-hi:#a87538; --sepia-dim:#dec5a6;
+    --burgundy:#8b3a3a; --green:#5a8a4a; --gold:#c4a155;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--cream); color:var(--ink); padding:32px 24px 60px; }
+
+  /* ── 페이지 헤더 ── */
+  .page-header { text-align:center; margin-bottom:40px; }
+  .page-header h1 { font-family:'Noto Sans KR',sans-serif; font-size:13px; font-weight:500; color:var(--ink3); letter-spacing:2px; text-transform:uppercase; margin-bottom:6px; }
+  .page-header p { font-family:'Noto Sans KR',sans-serif; font-size:12px; color:var(--ink3); }
+
+  /* ── 3열 그리드 ── */
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:28px; max-width:1080px; margin:0 auto; }
+
+  /* ── 컬럼 라벨 ── */
+  .col-label {
+    font-family:'Montserrat',sans-serif; font-size:9.5px; font-weight:700;
+    letter-spacing:2.5px; text-transform:uppercase; text-align:center;
+    padding:8px 14px; border-radius:3px; margin-bottom:16px;
+  }
+  .label-current { background:var(--cream2); color:var(--ink3); border:1px solid var(--line2); }
+  .label-a { background:rgba(184,133,79,.14); color:var(--sepia-hi); border:1px solid var(--sepia-dim); }
+  .label-b { background:rgba(44,44,44,.07); color:var(--ink2); border:1px solid var(--line2); }
+
+  .font-tag {
+    display:inline-block; font-family:'Montserrat',sans-serif; font-size:9px; font-weight:700;
+    letter-spacing:1.5px; text-transform:uppercase;
+    color:var(--sepia-hi); background:rgba(184,133,79,.10);
+    padding:3px 9px; border-radius:3px; margin-top:10px;
+  }
+
+  /* ── 카드 ── */
+  .card {
+    background:var(--paper); border:1px solid var(--line); border-radius:6px;
+    padding:22px 24px; margin-bottom:14px;
+    box-shadow:0 1px 8px rgba(44,44,44,.05);
+  }
+  .card.hero-card { background:linear-gradient(to bottom, #fdf9f4, #faf5ee); }
+
+  /* ── 공통 UI 요소 ── */
+  .tagline-bar {
+    font-family:'Montserrat',sans-serif; font-size:10.5px; letter-spacing:4px;
+    color:var(--sepia); text-transform:uppercase; font-weight:500; margin-bottom:12px;
+  }
+  .hero-rule { width:44px; height:2px; background:var(--sepia); margin-bottom:14px; }
+  .chip {
+    display:inline-block; font-size:11.5px; font-weight:500;
+    padding:4px 11px; border-radius:3px; margin-right:5px; margin-bottom:5px;
+  }
+  .chip.on { background:var(--sepia); color:#fff; }
+  .chip.green { background:var(--green); color:#fff; }
+  .chip.off { background:var(--paper2); color:var(--ink3); border:1px solid var(--line2); }
+  .chip.gold { background:var(--gold); color:#fff; }
+  .stat-row { display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid var(--line); }
+  .stat-label { font-size:11px; font-weight:500; color:var(--ink2); }
+  .movie-row { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--line); }
+  .movie-dot { width:3px; height:24px; background:var(--sepia); border-radius:2px; flex-shrink:0; }
+  .time-chip {
+    font-family:'Montserrat',sans-serif; font-size:10px; font-weight:500;
+    color:var(--ink2); background:var(--cream2); border:1px solid var(--line2);
+    border-radius:3px; padding:2px 7px;
+  }
+  .member-row { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--line); }
+
+  /* ─────────────────────────────────────────
+     현재: Noto Serif KR (제목) + Noto Sans KR (본문)
+  ───────────────────────────────────────── */
+  .current .hero-title {
+    font-family:'Noto Serif KR','Playfair Display',serif;
+    font-weight:700; font-size:20px; line-height:1.4; margin-bottom:8px;
+    letter-spacing:-.5px; color:var(--ink);
+  }
+  .current .manifesto p {
+    font-family:'Noto Serif KR',serif;
+    font-size:11.5px; color:var(--ink2); line-height:1.7;
+    font-style:italic; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    margin-bottom:4px;
+  }
+  .current .section-h2 {
+    font-family:'Noto Serif KR',serif;
+    font-weight:700; font-size:16px; color:var(--ink);
+    margin-bottom:13px; display:flex; align-items:center; gap:7px;
+  }
+  .current .body { font-family:'Noto Sans KR',sans-serif; font-size:12px; font-weight:300; color:var(--ink2); }
+  .current .big-num { font-family:'Playfair Display',serif; font-size:28px; font-weight:700; color:var(--sepia-hi); }
+  .current .member-name { font-family:'Noto Sans KR',sans-serif; font-size:13px; font-weight:600; color:var(--ink); }
+  .current .chip { font-family:'Noto Sans KR',sans-serif; }
+
+  /* ─────────────────────────────────────────
+     옵션 A: Pretendard (전체 통일)
+  ───────────────────────────────────────── */
+  .option-a .hero-title {
+    font-family:'Pretendard',sans-serif;
+    font-weight:700; font-size:20px; line-height:1.4; margin-bottom:8px;
+    letter-spacing:-.8px; color:var(--ink);
+  }
+  .option-a .manifesto p {
+    font-family:'Pretendard',sans-serif;
+    font-size:11.5px; color:var(--ink2); line-height:1.7;
+    font-weight:300; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    margin-bottom:4px;
+  }
+  .option-a .section-h2 {
+    font-family:'Pretendard',sans-serif;
+    font-weight:700; font-size:16px; color:var(--ink);
+    margin-bottom:13px; display:flex; align-items:center; gap:7px;
+    letter-spacing:-.5px;
+  }
+  .option-a .body { font-family:'Pretendard',sans-serif; font-size:12px; font-weight:300; color:var(--ink2); }
+  .option-a .big-num { font-family:'Pretendard',sans-serif; font-size:28px; font-weight:800; color:var(--sepia-hi); letter-spacing:-1px; }
+  .option-a .member-name { font-family:'Pretendard',sans-serif; font-size:13px; font-weight:600; color:var(--ink); }
+  .option-a .chip { font-family:'Pretendard',sans-serif; }
+
+  /* ─────────────────────────────────────────
+     옵션 B: SUIT (전체 통일)
+  ───────────────────────────────────────── */
+  .option-b .hero-title {
+    font-family:'SUIT',sans-serif;
+    font-weight:800; font-size:20px; line-height:1.4; margin-bottom:8px;
+    letter-spacing:-.6px; color:var(--ink);
+  }
+  .option-b .manifesto p {
+    font-family:'SUIT',sans-serif;
+    font-size:11.5px; color:var(--ink2); line-height:1.7;
+    font-weight:300; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    margin-bottom:4px;
+  }
+  .option-b .section-h2 {
+    font-family:'SUIT',sans-serif;
+    font-weight:700; font-size:16px; color:var(--ink);
+    margin-bottom:13px; display:flex; align-items:center; gap:7px;
+    letter-spacing:-.4px;
+  }
+  .option-b .body { font-family:'SUIT',sans-serif; font-size:12px; font-weight:300; color:var(--ink2); }
+  .option-b .big-num { font-family:'SUIT',sans-serif; font-size:28px; font-weight:800; color:var(--sepia-hi); letter-spacing:-1px; }
+  .option-b .member-name { font-family:'SUIT',sans-serif; font-size:13px; font-weight:600; color:var(--ink); }
+  .option-b .chip { font-family:'SUIT',sans-serif; }
+
+  @media(max-width:720px){ .grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>폰트 비교 프리뷰 — CINESYS</h1>
+  <p>세 가지 폰트를 나란히 비교해보세요</p>
+</div>
+
+<div class="grid">
+
+  <!-- ───────── 현재 ───────── -->
+  <div class="current">
+    <div class="col-label label-current">현재 (혼합)</div>
+
+    <!-- 배너 텍스트 -->
+    <div class="card hero-card">
+      <div class="hero-title">씨네시스 스페이스에 오신 것을 환영합니다!</div>
+      <div class="tagline-bar">CINEMA × FURSYS, CINESYS</div>
+      <div class="hero-rule"></div>
+      <div class="manifesto">
+        <p>영화 속에는 인생과 철학이 있고 즐거움, 슬픔, 사랑과 평화가 있습니다.</p>
+        <p>영화를 좋아하는 이들이 모여 영화를 보고 듣고 맛보고 즐기며 풍요로운 삶을 위한 영감을 얻는 장으로 만들고자 합니다.</p>
+      </div>
+      <div class="font-tag">Noto Serif KR · Playfair Display</div>
+    </div>
+
+    <!-- 카드 타이틀 + 상영작 -->
+    <div class="card">
+      <div class="section-h2"><span>🎬</span> 현재 상영작</div>
+      <div class="movie-row"><div class="movie-dot"></div><span style="flex:1;font-size:13px;font-weight:600;font-family:'Noto Sans KR'">군체</span><span class="time-chip">17:30</span><span class="time-chip">18:05</span></div>
+      <div class="movie-row"><div class="movie-dot"></div><span style="flex:1;font-size:13px;font-weight:600;font-family:'Noto Sans KR'">마이클</span><span class="time-chip">18:00</span><span class="time-chip">19:20</span></div>
+    </div>
+
+    <!-- 집계 -->
+    <div class="card">
+      <div class="section-h2"><span>📊</span> 이달의 집계</div>
+      <div class="stat-row"><span class="stat-label body">총 참석</span><span class="big-num">9<small style="font-size:13px;color:var(--ink3);font-family:'Noto Sans KR'">명</small></span></div>
+      <div class="stat-row"><span class="stat-label body">뒷풀이</span><span class="big-num">3<small style="font-size:13px;color:var(--ink3);font-family:'Noto Sans KR'">명</small></span></div>
+    </div>
+
+    <!-- 참석표 -->
+    <div class="card">
+      <div class="section-h2"><span>✅</span> 참석 & 영화 선택</div>
+      <div class="member-row"><span class="member-name">강지은</span><span class="chip on">참석 O</span><span class="chip green">전달</span><span class="chip gold">참석</span></div>
+      <div class="member-row"><span class="member-name">구본국</span><span class="chip on">참석 O</span><span class="chip off">미전달</span><span class="chip off">미정</span></div>
+      <div class="member-row"><span class="member-name">김수진</span><span class="chip off">불참 X</span></div>
+    </div>
+  </div>
+
+  <!-- ───────── 옵션 A: Pretendard ───────── -->
+  <div class="option-a">
+    <div class="col-label label-a">✨ A — Pretendard (전체 통일)</div>
+
+    <div class="card hero-card">
+      <div class="hero-title">씨네시스 스페이스에 오신 것을 환영합니다!</div>
+      <div class="tagline-bar">CINEMA × FURSYS, CINESYS</div>
+      <div class="hero-rule"></div>
+      <div class="manifesto">
+        <p>영화 속에는 인생과 철학이 있고 즐거움, 슬픔, 사랑과 평화가 있습니다.</p>
+        <p>영화를 좋아하는 이들이 모여 영화를 보고 듣고 맛보고 즐기며 풍요로운 삶을 위한 영감을 얻는 장으로 만들고자 합니다.</p>
+      </div>
+      <div class="font-tag">Pretendard Variable</div>
+    </div>
+
+    <div class="card">
+      <div class="section-h2"><span>🎬</span> 현재 상영작</div>
+      <div class="movie-row"><div class="movie-dot"></div><span style="flex:1;font-size:13px;font-weight:600;font-family:'Pretendard'">군체</span><span class="time-chip">17:30</span><span class="time-chip">18:05</span></div>
+      <div class="movie-row"><div class="movie-dot"></div><span style="flex:1;font-size:13px;font-weight:600;font-family:'Pretendard'">마이클</span><span class="time-chip">18:00</span><span class="time-chip">19:20</span></div>
+    </div>
+
+    <div class="card">
+      <div class="section-h2"><span>📊</span> 이달의 집계</div>
+      <div class="stat-row"><span class="stat-label body">총 참석</span><span class="big-num">9<small style="font-size:13px;color:var(--ink3);font-family:'Pretendard'">명</small></span></div>
+      <div class="stat-row"><span class="stat-label body">뒷풀이</span><span class="big-num">3<small style="font-size:13px;color:var(--ink3);font-family:'Pretendard'">명</small></span></div>
+    </div>
+
+    <div class="card">
+      <div class="section-h2"><span>✅</span> 참석 & 영화 선택</div>
+      <div class="member-row"><span class="member-name">강지은</span><span class="chip on">참석 O</span><span class="chip green">전달</span><span class="chip gold">참석</span></div>
+      <div class="member-row"><span class="member-name">구본국</span><span class="chip on">참석 O</span><span class="chip off">미전달</span><span class="chip off">미정</span></div>
+      <div class="member-row"><span class="member-name">김수진</span><span class="chip off">불참 X</span></div>
+    </div>
+  </div>
+
+  <!-- ───────── 옵션 B: SUIT ───────── -->
+  <div class="option-b">
+    <div class="col-label label-b">B — SUIT (전체 통일)</div>
+
+    <div class="card hero-card">
+      <div class="hero-title">씨네시스 스페이스에 오신 것을 환영합니다!</div>
+      <div class="tagline-bar">CINEMA × FURSYS, CINESYS</div>
+      <div class="hero-rule"></div>
+      <div class="manifesto">
+        <p>영화 속에는 인생과 철학이 있고 즐거움, 슬픔, 사랑과 평화가 있습니다.</p>
+        <p>영화를 좋아하는 이들이 모여 영화를 보고 듣고 맛보고 즐기며 풍요로운 삶을 위한 영감을 얻는 장으로 만들고자 합니다.</p>
+      </div>
+      <div class="font-tag">SUIT Variable</div>
+    </div>
+
+    <div class="card">
+      <div class="section-h2"><span>🎬</span> 현재 상영작</div>
+      <div class="movie-row"><div class="movie-dot"></div><span style="flex:1;font-size:13px;font-weight:600;font-family:'SUIT'">군체</span><span class="time-chip">17:30</span><span class="time-chip">18:05</span></div>
+      <div class="movie-row"><div class="movie-dot"></div><span style="flex:1;font-size:13px;font-weight:600;font-family:'SUIT'">마이클</span><span class="time-chip">18:00</span><span class="time-chip">19:20</span></div>
+    </div>
+
+    <div class="card">
+      <div class="section-h2"><span>📊</span> 이달의 집계</div>
+      <div class="stat-row"><span class="stat-label body">총 참석</span><span class="big-num">9<small style="font-size:13px;color:var(--ink3);font-family:'SUIT'">명</small></span></div>
+      <div class="stat-row"><span class="stat-label body">뒷풀이</span><span class="big-num">3<small style="font-size:13px;color:var(--ink3);font-family:'SUIT'">명</small></span></div>
+    </div>
+
+    <div class="card">
+      <div class="section-h2"><span>✅</span> 참석 & 영화 선택</div>
+      <div class="member-row"><span class="member-name">강지은</span><span class="chip on">참석 O</span><span class="chip green">전달</span><span class="chip gold">참석</span></div>
+      <div class="member-row"><span class="member-name">구본국</span><span class="chip on">참석 O</span><span class="chip off">미전달</span><span class="chip off">미정</span></div>
+      <div class="member-row"><span class="member-name">김수진</span><span class="chip off">불참 X</span></div>
+    </div>
+  </div>
+
+</div>
+
+<div style="text-align:center;margin-top:44px;font-family:'Noto Sans KR',sans-serif;font-size:12px;color:var(--ink3);line-height:1.8;">
+  마음에 드는 옵션이 있으면 <b style="color:var(--sepia-hi)">"A로 해줘"</b> 또는 <b style="color:var(--ink2)">"B로 해줘"</b> 라고 말씀해 주세요.<br>
+  <span style="font-size:11px;">※ 인터넷 연결 필요 (폰트를 CDN에서 불러와요)</span>
+</div>
+
+</body>
+</html>
