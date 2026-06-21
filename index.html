@@ -243,14 +243,16 @@
   .auth-badge{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:3px;}
   .auth-badge.admin{background:rgba(90,138,74,.12);color:#4f6047;border:1px solid #c1d4b8;}
   .auth-badge.guest{background:var(--paper2);color:var(--ink3);border:1px solid var(--line);}
-  /* 비관리자 제한 */
-  body.restricted .admin-only{display:none!important;}
-  body.restricted #sec-finance input,
-  body.restricted #sec-finance select{pointer-events:none;opacity:.5;background:var(--paper2);}
-  body.restricted #sec-finance .btn{pointer-events:none;opacity:.4;}
-  body.restricted #sec-finance .ep-view-btn{pointer-events:auto!important;opacity:1!important;}
-  body.restricted #sec-finance .cost-total{opacity:1;}
-  body.restricted .x{display:none!important;}
+  /* 권한별 제한 */
+  body:not(.admin) .admin-only{display:none!important;}
+  body:not(.admin) #sec-finance input,
+  body:not(.admin) #sec-finance select{pointer-events:none;opacity:.5;background:var(--paper2);}
+  body:not(.admin) #sec-finance .btn{pointer-events:none;opacity:.4;}
+  body:not(.admin) #sec-finance .ep-view-btn{pointer-events:auto!important;opacity:1!important;}
+  body:not(.admin) #sec-finance .cost-total{opacity:1;}
+  body:not(.admin) .x{display:none!important;}
+  /* 게스트: 멤버 전용 탭 숨김 */
+  body.guest .member-only{display:none!important;}
   .lock-notice{font-size:12px;color:var(--ink3);padding:10px 0;font-style:italic;}
   /* ── 활동일 배너 ── */
   .activity-date-banner{display:flex;align-items:center;gap:10px;background:#fdf8f3;border:0.5px solid #e8d5bb;border-radius:6px;padding:9px 14px;margin:0 0 16px;flex-wrap:wrap;}
@@ -395,9 +397,9 @@
   <div class="nav-wrap">
     <div id="authArea" class="auth-area"></div>
     <nav class="tabs">
-      <button class="tab active" data-tab="activity">이달의 활동</button>
-      <button class="tab" data-tab="finance">정산</button>
-      <button class="tab" data-tab="library">라이브러리</button>
+      <button class="tab member-only" data-tab="activity">이달의 활동</button>
+      <button class="tab member-only" data-tab="finance">정산</button>
+      <button class="tab active" data-tab="library">라이브러리</button>
       <button class="tab admin-only" data-tab="members">멤버 관리</button>
     </nav>
     <div class="month-picker" id="monthPicker">
@@ -416,7 +418,7 @@
   <div id="activityDateBanner"></div>
 
   <!-- ACTIVITY -->
-  <section class="section active" id="sec-activity">
+  <section class="section" id="sec-activity">
     <div id="voteSection" style="display:none"></div>
     <div class="activity-grid">
 
@@ -523,7 +525,7 @@
   </section>
 
   <!-- LIBRARY -->
-  <section class="section" id="sec-library">
+  <section class="section active" id="sec-library">
     <div class="panel">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:8px;">
         <h2 style="margin-bottom:0"><span class="ic">🎬</span> 영화 라이브러리 <span id="libCount" style="font-size:14px;font-weight:500;color:var(--ink3);"></span></h2>
@@ -587,21 +589,38 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const auth = firebase.auth();
 
-/* ── 관리자 설정 ── */
-const ADMIN_EMAILS = ['tpfuddl48@gmail.com'];
+/* ── 관리자/멤버 설정 ── */
+const ADMIN_EMAILS = ['tpfuddl48@fursys.com'];
 let currentUser = null;
+let membersReady = false;
+
 function isAdmin(){ return !!(currentUser && ADMIN_EMAILS.includes(currentUser.email)); }
+function isMember(){
+  if(!currentUser) return false;
+  if(isAdmin()) return true;
+  return members.some(m => m.email && m.email.toLowerCase() === currentUser.email.toLowerCase());
+}
+
+function showNonMemberPopup(){
+  openModal('접근 제한',
+    `<div style="text-align:center;padding:8px 0 4px;">
+       <div style="font-size:40px;margin-bottom:14px;">🎬</div>
+       <p style="font-size:15px;font-weight:600;color:var(--ink);margin-bottom:10px;">인증된 회원이 아닙니다.</p>
+       <p style="font-size:13.5px;color:var(--ink2);line-height:1.7;">씨네시스 회원이 되고 싶으시면<br><b style="color:var(--sepia)">최세령</b>님에게 문의해주세요.</p>
+     </div>`,
+    ()=>{}, '확인', 'primary');
+}
 
 function updateAuthArea(){
   const area = document.getElementById('authArea');
   if(!area) return;
-  if(currentUser){
+  if(currentUser && isMember()){
     const admin = isAdmin();
     area.innerHTML = `
-      <span class="auth-badge ${admin?'admin':'guest'}">${admin?'🔑 관리자':'👤 '+esc(currentUser.displayName||'멤버')}</span>
+      <span class="auth-badge ${admin?'admin':'guest'}">${admin?'🔑 관리자':'👤 '+esc(currentUser.displayName||currentUser.email)}</span>
       <button class="btn sm ghost" onclick="authSignOut()" style="font-size:11px;padding:4px 9px;">로그아웃</button>`;
   } else {
-    area.innerHTML = `<button class="btn sm" onclick="authSignIn()" style="font-size:12px;padding:5px 11px;">🔒 관리자 로그인</button>`;
+    area.innerHTML = `<button class="btn sm" onclick="authSignIn()" style="font-size:12px;padding:5px 11px;">🔑 로그인</button>`;
   }
 }
 function authSignIn(){
@@ -610,13 +629,47 @@ function authSignIn(){
 }
 function authSignOut(){ auth.signOut(); }
 
-auth.onAuthStateChanged(user=>{
-  currentUser = user;
-  document.body.classList.toggle('restricted', !isAdmin());
+function reEvalAuth(){
+  if(!currentUser){
+    document.body.classList.remove('guest','member','admin');
+    document.body.classList.add('guest');
+    document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+    document.getElementById('sec-library').classList.add('active');
+    document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab==='library'));
+    updateAuthArea();
+    renderConfirmSection();
+    renderFinance();
+    renderReviewerBoard();
+    return;
+  }
+  const admin = isAdmin();
+  const member = isMember();
+  if(!admin && !member){
+    showNonMemberPopup();
+    auth.signOut();
+    return;
+  }
+  document.body.classList.remove('guest','member','admin');
+  if(admin) document.body.classList.add('admin');
+  else document.body.classList.add('member');
+
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.getElementById('sec-activity').classList.add('active');
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab==='activity'));
+
   updateAuthArea();
   renderConfirmSection();
   renderFinance();
   renderReviewerBoard();
+}
+
+auth.onAuthStateChanged(user=>{
+  currentUser = user;
+  if(!membersReady){
+    updateAuthArea();
+    return;
+  }
+  reEvalAuth();
 });
 
 const SCHEMA_VERSION = 2;
@@ -733,6 +786,7 @@ function migrateMember(m){
   if(m.leaveDate===undefined) m.leaveDate='';
   if(m.otherClubs===undefined) m.otherClubs='';
   if(m.role===undefined) m.role='회원';
+  if(m.email===undefined) m.email='';
   return m;
 }
 function migrateFinance(f){
@@ -796,6 +850,8 @@ async function init(){
   buildMonthSelect();
   renderAll();
   refreshLibraryLiveData();
+  membersReady = true;
+  reEvalAuth();
 }
 
 async function loadMonth(id){
@@ -1527,14 +1583,14 @@ function renderPartyExpense(){
     totalBox.innerHTML = '';
     return;
   }
-  let h = `<thead><tr><th>이름</th><th>계좌번호</th><th>사용 금액(원)</th><th>정산 완료</th></tr></thead><tbody>`;
+  let h = `<thead><tr><th>이름</th><th class="admin-only">계좌번호</th><th>사용 금액(원)</th><th>정산 완료</th></tr></thead><tbody>`;
   party.forEach(m=>{
     const p = partyExp(m.id);
     const isT = isTreasurer(m.id);
     const acct = [m.bank, m.account].filter(Boolean).join(' ') || '-';
     h += `<tr data-id="${m.id}">
       <td class="name">${esc(m.name)}</td>
-      <td style="font-size:12px;color:var(--ink2)">${esc(acct)}</td>
+      <td class="admin-only" style="font-size:12px;color:var(--ink2)">${esc(acct)}</td>
       <td><input type="number" class="num" data-act="pe-amt" value="${p.amount||''}" placeholder="0"${isAdmin()?'':' disabled'}></td>
       <td>${isT
         ? '<span class="pill self">총무 (면제)</span>'
@@ -1601,7 +1657,7 @@ function renderPartyTable(){
     t.innerHTML = '<tbody><tr><td><div class="empty">초과 지출이 없어 추가 정산이 필요하지 않아요. ✓</div></td></tr></tbody>';
     return;
   }
-  let h = `<thead><tr><th>이름</th><th>등급</th><th>정산액</th><th>은행</th><th>계좌번호</th><th>입금</th></tr></thead><tbody>`;
+  let h = `<thead><tr><th>이름</th><th>등급</th><th>정산액</th><th class="admin-only">은행</th><th class="admin-only">계좌번호</th><th>입금</th></tr></thead><tbody>`;
   party.forEach(m=>{
     const p = excPay(m.id);
     const isT = isTreasurer(m.id);
@@ -1609,8 +1665,8 @@ function renderPartyTable(){
       <td class="name">${esc(m.name)}</td>
       <td><span class="role-chip ${esc(m.role||'회원')}">${esc(m.role||'회원')}</span></td>
       <td><b style="font-family:'Playfair Display',serif;font-size:16px;color:${isT?'var(--ink3)':'var(--sepia-hi)'}">${fmt(shareEach)}원</b>${isT?' <span style="font-size:11px;color:var(--ink3);margin-left:4px">(본인 면제)</span>':''}</td>
-      <td>${esc(m.bank||'-')}</td>
-      <td>${esc(m.account||'-')}</td>
+      <td class="admin-only">${esc(m.bank||'-')}</td>
+      <td class="admin-only">${esc(m.account||'-')}</td>
       <td>${isT?'<span class="pill self">면제</span>':isAdmin()?`<span class="chip ${p.deposited?'on green':''}" data-act="dep">${p.deposited?'입금 O':'미입금'}</span>`:`<span class="pill ${p.deposited?'green':''}" style="opacity:.85">${p.deposited?'입금 O':'미입금'}</span>`}</td>
     </tr>`;
   });
@@ -1752,15 +1808,19 @@ function renderMembers(){
   const countEl=document.getElementById('memberCount');
   if(countEl) countEl.textContent=`· 총 ${members.length}명`;
   if(!members.length){t.innerHTML='<tbody><tr><td><div class="empty">멤버를 추가해주세요.</div></td></tr></tbody>';return;}
-  let h=`<thead><tr><th>이름</th><th>등급</th><th>소속</th><th>가입일자</th><th>은행</th><th>계좌번호</th><th style="text-align:right">관리</th></tr></thead><tbody>`;
+  let h=`<thead><tr><th>이름</th><th>등급</th><th>소속</th><th>이메일</th><th>가입일자</th><th>은행</th><th>계좌번호</th><th style="text-align:right">관리</th></tr></thead><tbody>`;
   const sortedMems=[...members].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
   sortedMems.forEach(m=>{
     const role = m.role||'회원';
     const aff = [m.company,m.team].filter(Boolean).join(' / ') || '-';
+    const emailBadge = m.email
+      ? `<span style="font-size:12px;color:var(--ink2)">${esc(m.email)}</span>`
+      : `<span style="font-size:12px;color:var(--ink3);font-style:italic">미등록</span>`;
     h+=`<tr data-id="${m.id}">
       <td class="name">${esc(m.name)}</td>
       <td><span class="role-chip ${esc(role)}">${esc(role)}</span></td>
       <td><span style="font-size:13px">${esc(aff)}</span></td>
+      <td>${emailBadge}</td>
       <td><span style="font-size:12.5px;color:var(--ink2)">${esc(m.joinDate||'-')}</span></td>
       <td>${esc(m.bank||'-')}</td>
       <td>${esc(m.account||'-')}</td>
@@ -1804,6 +1864,7 @@ function addMember(){
   const roleOpts=['회원','회장','총무'].map(r=>`<option value="${r}">${r}</option>`).join('');
   openModal('멤버 추가',
     `<div class="field"><label>이름</label><input id="em-n" type="text" placeholder="이름 입력"></div>
+     <div class="field"><label>로그인 이메일 <span style="font-size:11px;color:var(--sepia);font-weight:400">멤버 인증에 사용됩니다</span></label><input id="em-email" type="email" placeholder="example@fursys.com"></div>
      <div class="field"><label>등급</label><select id="em-role">${roleOpts}</select></div>
      <div class="grid2">
        <div class="field"><label>소속 법인</label><select id="em-co">${compOpts}</select></div>
@@ -1823,6 +1884,7 @@ function addMember(){
       if(!name){toast('이름을 입력하세요');return false;}
       members.push({
         id:uid(), name,
+        email:document.getElementById('em-email').value.trim().toLowerCase(),
         role:document.getElementById('em-role').value||'회원',
         company:document.getElementById('em-co').value||'',
         team:document.getElementById('em-team').value.trim(),
@@ -1844,6 +1906,7 @@ function editMember(id){
   const roleOpts = ['회원','회장','총무'].map(r=>`<option value="${r}" ${(m.role||'회원')===r?'selected':''}>${r}</option>`).join('');
   openModal('멤버 수정',
     `<div class="field"><label>이름</label><input id="em-n" type="text" value="${esc(m.name)}"></div>
+     <div class="field"><label>로그인 이메일 <span style="font-size:11px;color:var(--sepia);font-weight:400">멤버 인증에 사용됩니다</span></label><input id="em-email" type="email" value="${esc(m.email||'')}" placeholder="example@fursys.com"></div>
      <div class="field"><label>등급</label><select id="em-role">${roleOpts}</select></div>
      <div class="grid2">
        <div class="field"><label>소속 법인</label><select id="em-co">${compOpts}</select></div>
@@ -1862,6 +1925,7 @@ function editMember(id){
       const nn=document.getElementById('em-n').value.trim();
       if(!nn){toast('이름을 입력하세요');return false;}
       m.name=nn;
+      m.email=document.getElementById('em-email').value.trim().toLowerCase();
       m.role=document.getElementById('em-role').value||'회원';
       m.company=document.getElementById('em-co').value||'';
       m.team=document.getElementById('em-team').value.trim();
