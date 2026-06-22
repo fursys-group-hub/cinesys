@@ -1882,19 +1882,22 @@ function renderMembers(){
   const countEl=document.getElementById('memberCount');
   if(countEl) countEl.textContent=`· 총 ${members.length}명`;
   if(!members.length){t.innerHTML='<tbody><tr><td><div class="empty">멤버를 추가해주세요.</div></td></tr></tbody>';return;}
-  let h=`<thead><tr><th>이름</th><th>등급</th><th>소속</th><th>이메일</th><th>가입일자</th><th>은행</th><th>계좌번호</th><th style="text-align:right">관리</th></tr></thead><tbody>`;
+  let h=`<thead><tr><th>이름</th><th>등급</th><th>소속</th><th>연락처</th><th>가입일자</th><th>은행</th><th>계좌번호</th><th style="text-align:right">관리</th></tr></thead><tbody>`;
   const sortedMems=[...members].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
   sortedMems.forEach(m=>{
     const role = m.role||'회원';
     const aff = [m.company,m.team].filter(Boolean).join(' / ') || '-';
-    const emailBadge = m.email
-      ? `<span style="font-size:12px;color:var(--ink2)">${esc(m.email)}</span>`
-      : `<span style="font-size:12px;color:var(--ink3);font-style:italic">미등록</span>`;
+    const emailDisplay = m.email
+      ? `<div style="font-size:12px;color:var(--ink2)">${esc(m.email)}</div>`
+      : `<div style="font-size:12px;color:var(--ink3);font-style:italic">이메일 미등록</div>`;
+    const phoneDisplay = m.phone
+      ? `<div style="font-size:12px;color:var(--ink2)">${esc(m.phone)}</div>`
+      : `<div style="font-size:12px;color:var(--ink3)">-</div>`;
     h+=`<tr data-id="${m.id}">
       <td class="name">${esc(m.name)}</td>
       <td><span class="role-chip ${esc(role)}">${esc(role)}</span></td>
       <td><span style="font-size:13px">${esc(aff)}</span></td>
-      <td>${emailBadge}</td>
+      <td style="line-height:1.5">${emailDisplay}${phoneDisplay}</td>
       <td><span style="font-size:12.5px;color:var(--ink2)">${esc(m.joinDate||'-')}</span></td>
       <td>${esc(m.bank||'-')}</td>
       <td>${esc(m.account||'-')}</td>
@@ -1954,7 +1957,10 @@ function addMember(){
   openModal('멤버 추가',
     `<div class="field"><label>이름</label><input id="em-n" type="text" placeholder="이름 입력"></div>
      <div class="field"><label>로그인 이메일 <span style="font-size:11px;color:var(--sepia);font-weight:400">멤버 인증에 사용됩니다</span></label><input id="em-email" type="email" placeholder="example@fursys.com"></div>
-     <div class="field"><label>등급</label><select id="em-role">${roleOpts}</select></div>
+     <div class="grid2">
+       <div class="field"><label>핸드폰</label><input id="em-phone" type="text" placeholder="010-1234-5678"></div>
+       <div class="field"><label>등급</label><select id="em-role">${roleOpts}</select></div>
+     </div>
      <div class="grid2">
        <div class="field"><label>소속 법인</label><select id="em-co" onchange="var e=document.getElementById('em-co-etc');e.style.display=this.value==='기타'?'block':'none'">${compOpts}</select><input id="em-co-etc" type="text" placeholder="법인명 직접 입력" style="display:none;margin-top:6px"></div>
        <div class="field"><label>소속 팀</label><input id="em-team" type="text" placeholder="팀명"></div>
@@ -1976,6 +1982,7 @@ function addMember(){
       members.push({
         id:uid(), name,
         email:document.getElementById('em-email').value.trim().toLowerCase(),
+        phone:document.getElementById('em-phone').value.trim(),
         role:document.getElementById('em-role').value||'회원',
         company:coSel==='기타'?(coEtc||'기타'):coSel,
         team:document.getElementById('em-team').value.trim(),
@@ -2000,7 +2007,10 @@ function editMember(id){
   openModal('멤버 수정',
     `<div class="field"><label>이름</label><input id="em-n" type="text" value="${esc(m.name)}"></div>
      <div class="field"><label>로그인 이메일 <span style="font-size:11px;color:var(--sepia);font-weight:400">멤버 인증에 사용됩니다</span></label><input id="em-email" type="email" value="${esc(m.email||'')}" placeholder="example@fursys.com"></div>
-     <div class="field"><label>등급</label><select id="em-role">${roleOpts}</select></div>
+     <div class="grid2">
+       <div class="field"><label>핸드폰</label><input id="em-phone" type="text" value="${esc(m.phone||'')}" placeholder="010-1234-5678"></div>
+       <div class="field"><label>등급</label><select id="em-role">${roleOpts}</select></div>
+     </div>
      <div class="grid2">
        <div class="field"><label>소속 법인</label><select id="em-co" onchange="var e=document.getElementById('em-co-etc');e.style.display=this.value==='기타'?'block':'none'">${compOpts}</select><input id="em-co-etc" type="text" placeholder="법인명 직접 입력" value="${esc(isCustomCo?m.company:'')}" style="display:${isCustomCo?'block':'none'};margin-top:6px"></div>
        <div class="field"><label>소속 팀</label><input id="em-team" type="text" value="${esc(m.team||'')}"></div>
@@ -2021,6 +2031,7 @@ function editMember(id){
       const coEtc=document.getElementById('em-co-etc').value.trim();
       m.name=nn;
       m.email=document.getElementById('em-email').value.trim().toLowerCase();
+      m.phone=document.getElementById('em-phone').value.trim();
       m.role=document.getElementById('em-role').value||'회원';
       m.company=coSel==='기타'?(coEtc||'기타'):coSel;
       m.team=document.getElementById('em-team').value.trim();
