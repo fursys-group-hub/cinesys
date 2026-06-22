@@ -144,7 +144,7 @@
 
   /* movie cards */
   .movies{display:flex;flex-direction:column;gap:6px;margin-bottom:8px;}
-  .moviecard{background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:8px 36px 8px 17px;position:relative;transition:.15s;overflow:hidden;display:flex;align-items:center;gap:10px;}
+  .moviecard{background:var(--paper);border:1px solid var(--line);border-radius:4px;padding:8px 56px 8px 17px;position:relative;transition:.15s;overflow:hidden;display:flex;align-items:center;gap:10px;}
   .moviecard:hover{border-color:var(--sepia);}
   .moviecard::before{content:"";position:absolute;left:0;top:0;height:100%;width:3px;background:var(--sepia);}
   .moviecard .mt{font-family:'Noto Serif KR',serif;font-weight:700;font-size:13.5px;color:var(--ink);min-width:100px;width:140px;flex-shrink:0;letter-spacing:-.3px;}
@@ -152,6 +152,8 @@
   .time-chip{font-size:11px;font-family:'Montserrat';font-weight:500;color:var(--ink2);background:var(--cream2);border:1px solid var(--line2);border-radius:3px;padding:2px 7px;white-space:nowrap;cursor:default;}
   .moviecard .x{position:absolute;top:50%;right:8px;transform:translateY(-50%);cursor:pointer;color:var(--ink3);font-size:11px;border:none;background:transparent;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:.15s;}
   .moviecard .x:hover{color:#fff;background:var(--burgundy);}
+  .moviecard .e{position:absolute;top:50%;right:32px;transform:translateY(-50%);cursor:pointer;color:var(--ink3);font-size:13px;border:none;background:transparent;width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:.15s;}
+  .moviecard .e:hover{color:#fff;background:var(--sepia);}
 
   /* Finance overview */
   .fin-overview{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:14px;}
@@ -594,7 +596,12 @@ const ADMIN_EMAILS = ['tpfuddl48@fursys.com'];
 let currentUser = null;
 let membersReady = false;
 
-function isAdmin(){ return !!(currentUser && ADMIN_EMAILS.includes(currentUser.email)); }
+function isAdmin(){
+  if(!currentUser) return false;
+  if(ADMIN_EMAILS.includes(currentUser.email)) return true;
+  const me=members.find(m=>m.email&&m.email.toLowerCase()===currentUser.email.toLowerCase());
+  return !!(me&&(me.role==='총무'||me.role==='회장'));
+}
 function isMember(){
   if(!currentUser) return false;
   if(isAdmin()) return true;
@@ -972,10 +979,12 @@ function renderMovies(){
   cur.movies.forEach(mv=>{
     const times=(mv.times||[mv.time||'']).filter(Boolean);
     const d=document.createElement('div'); d.className='moviecard';
-    d.innerHTML=`<button class="x" title="삭제">✕</button>
+    d.innerHTML=`<button class="x admin-only" title="삭제">✕</button>
+      <button class="e admin-only" title="수정">✎</button>
       <div class="mt">${esc(mv.title)}</div>
       <div class="moviecard-times">${times.map(t=>`<span class="time-chip">${esc(t)}</span>`).join('')}</div>`;
     d.querySelector('.x').onclick=()=>deleteMovie(mv.id);
+    d.querySelector('.e').onclick=()=>editMovie(mv.id);
     box.appendChild(d);
   });
 }
@@ -999,7 +1008,14 @@ function renderActivityTableAdmin(t){
     h+=`<tr data-id="${m.id}"${isDanger?' class="danger-row"':''}>
       <td class="name">${isDanger?'<span style="font-size:11px;margin-right:4px;">⚠</span>':''}${esc(m.name)}</td>
       <td><span class="chip ${attClass}"${locked?' style="cursor:default"':''} data-act="att">${attText}</span></td>
-      <td>${att===true?`<select data-act="movie"${locked?' disabled':''} style="${locked?'opacity:.7;cursor:default':''}">${cur.movies.length?opts(r.movieId,r.movieTime):'<option>상영작 없음</option>'}</select>`:'<span style="color:var(--ink3)">-</span>'}</td>
+      <td>${att===true?(()=>{
+        if(!cur.movies.length) return '<span style="color:var(--ink3)">상영작 없음</span>';
+        const dis=locked?' disabled':'';
+        const mvOpts=`<option value="">영화 선택</option>`+cur.movies.map(m=>`<option value="${m.id}" ${m.id===r.movieId?'selected':''}>${esc(m.title)}</option>`).join('');
+        const selMv=cur.movies.find(m=>m.id===r.movieId);
+        const tOpts=selMv?(selMv.times||[]).map(t=>`<option value="${t}" ${t===r.movieTime?'selected':''}>${t}</option>`).join(''):'';
+        return `<div style="display:flex;flex-direction:column;gap:2px;min-width:90px"><select data-act="mv-title"${dis} style="font-size:12px${locked?';opacity:.7;cursor:default':''}">${mvOpts}</select><select data-act="mv-time"${dis} style="font-size:12px${locked?';opacity:.7;cursor:default':''};${selMv?'':'display:none'}">${tOpts||'<option>-</option>'}</select></div>`;
+      })():'<span style="color:var(--ink3)">-</span>'}</td>
       <td>${att===true?`<input type="text" data-act="seat" value="${esc(r.seat||'')}" placeholder="좌석" style="width:55px${locked?';opacity:.7':''}"${locked?' disabled':''}>`:'<span style="color:var(--ink3)">-</span>'}</td>
       <td>${att===true?`<span class="chip ${r.ticketGiven?'on green':''}"${locked?' style="cursor:default"':''} data-act="ticket">${r.ticketGiven?'전달':'미전달'}</span>`:'<span style="color:var(--ink3)">-</span>'}</td>
       <td>${att===true?`<span class="chip ${r.afterparty?'on gold':''}"${locked?' style="cursor:default"':''} data-act="after">${r.afterparty?'참석':'미정'}</span>`:'<span style="color:var(--ink3)">-</span>'}</td>
@@ -1018,7 +1034,21 @@ function renderActivityTableAdmin(t){
       else if(r.attending&&!r.movieId&&cur.movies[0]){r.movieId=cur.movies[0].id;r.movieTime=(cur.movies[0].times||[])[0]||null;}
       saveMonth();renderActivity();renderFinance();
     };
-    const ms=tr.querySelector('[data-act=movie]'); if(ms)ms.onchange=e=>{const [mid,mt]=(e.target.value||'::').split('::');const r=rec(id);r.movieId=mid||null;r.movieTime=mt||null;saveMonth();renderMovies();updateSummaryCards();renderFinance();};
+    const mvSel=tr.querySelector('[data-act=mv-title]');
+    const tmSel=tr.querySelector('[data-act=mv-time]');
+    if(mvSel) mvSel.onchange=e=>{
+      const mid=e.target.value||null;
+      const r=rec(id); r.movieId=mid; r.movieTime=null;
+      const mv=cur.movies.find(m=>m.id===mid);
+      const times=mv?(mv.times||[]):[];
+      if(tmSel){
+        tmSel.innerHTML=times.map(t=>`<option value="${t}">${t}</option>`).join('')||'<option>-</option>';
+        tmSel.style.display=times.length?'':'none';
+        if(times.length){r.movieTime=times[0];tmSel.value=times[0];}
+      }
+      saveMonth();renderMovies();updateSummaryCards();renderFinance();
+    };
+    if(tmSel) tmSel.onchange=e=>{rec(id).movieTime=e.target.value||null;saveMonth();renderMovies();updateSummaryCards();renderFinance();};
     const st=tr.querySelector('[data-act=seat]'); if(st)st.onchange=e=>{rec(id).seat=e.target.value;saveMonth();};
     const tk=tr.querySelector('[data-act=ticket]'); if(tk)tk.onclick=()=>{rec(id).ticketGiven=!rec(id).ticketGiven;saveMonth();renderActivityTable();updateSummaryCards();};
     const af=tr.querySelector('[data-act=after]'); if(af)af.onclick=()=>{const r=rec(id);r.afterparty=!r.afterparty;saveMonth();renderActivityTable();updateSummaryCards();renderFinance();};
@@ -1058,40 +1088,57 @@ function openAttendancePopup(memberId){
   if(!cur||cur.confirmed){return;}
   const m=members.find(mb=>mb.id===memberId); if(!m) return;
   const r=cur.records[memberId]||{attending:null,movieId:null,movieTime:null,afterparty:false};
-  const movieOpts=cur.movies.flatMap(mv=>(mv.times||[]).map(t=>`<option value="${mv.id}::${t}"${r.movieId===mv.id&&r.movieTime===t?' selected':''}>${esc(mv.title)} ${t}</option>`)).join('');
   const attYes=r.attending===true?'checked':'';
   const attNo=r.attending===false?'checked':'';
   const attNull=r.attending!==true&&r.attending!==false?'checked':'';
+  const lbl='font-family:\'Montserrat\';font-size:10.5px;color:var(--ink3);text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:8px;';
+  const radioLbl='display:flex;align-items:center;gap:7px;cursor:pointer;font-size:14px;';
+
+  // 영화 라디오 버튼
+  const movieRadios=cur.movies.length
+    ? cur.movies.map(mv=>`<label style="${radioLbl}padding:3px 0"><input type="radio" name="popmovie" value="${mv.id}" ${mv.id===r.movieId?'checked':''}> ${esc(mv.title)}</label>`).join('')
+    : '<span style="color:var(--ink3);font-size:13px">등록된 상영작이 없습니다</span>';
+
+  // 초기 선택 영화의 시간 옵션
+  const initMv=cur.movies.find(mv=>mv.id===r.movieId);
+  const initTimeHtml=(initMv&&(initMv.times||[]).length)
+    ? (initMv.times||[]).map(t=>`<label style="${radioLbl}padding:3px 0"><input type="radio" name="poptime" value="${t}" ${t===r.movieTime?'checked':''}> ${t}</label>`).join('')
+    : '';
+
   const body=`<div style="display:flex;flex-direction:column;gap:18px;">
     <div>
-      <div style="font-family:'Montserrat';font-size:10.5px;color:var(--ink3);text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:8px;">참석 여부</div>
+      <div style="${lbl}">참석 여부</div>
       <div style="display:flex;gap:16px;flex-wrap:wrap;">
-        <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:14px;"><input type="radio" name="att" value="yes" ${attYes}> 참석 O</label>
-        <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:14px;"><input type="radio" name="att" value="no" ${attNo}> 불참 X</label>
-        <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:14px;"><input type="radio" name="att" value="none" ${attNull}> 미정</label>
+        <label style="${radioLbl}"><input type="radio" name="att" value="yes" ${attYes}> 참석 O</label>
+        <label style="${radioLbl}"><input type="radio" name="att" value="no" ${attNo}> 불참 X</label>
+        <label style="${radioLbl}"><input type="radio" name="att" value="none" ${attNull}> 미정</label>
       </div>
     </div>
     <div id="popMovieWrap" style="${r.attending===true?'':'display:none'}">
-      <div style="font-family:'Montserrat';font-size:10.5px;color:var(--ink3);text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:8px;">관람 영화</div>
-      <select id="popMovie" style="width:100%;font-size:13.5px;padding:8px 10px;">${movieOpts||'<option>상영작 없음</option>'}</select>
+      <div style="${lbl}">관람 영화</div>
+      <div id="popMovieOptions" style="display:flex;flex-direction:column;gap:2px;">${movieRadios}</div>
+    </div>
+    <div id="popTimeWrap" style="${r.attending===true&&initTimeHtml?'':'display:none'}">
+      <div style="${lbl}">상영 시간</div>
+      <div id="popTimeOptions" style="display:flex;gap:14px;flex-wrap:wrap;">${initTimeHtml}</div>
     </div>
     <div id="popPartyWrap" style="${r.attending===true?'':'display:none'}">
-      <div style="font-family:'Montserrat';font-size:10.5px;color:var(--ink3);text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:8px;">뒷풀이 참석</div>
+      <div style="${lbl}">뒷풀이 참석</div>
       <div style="display:flex;gap:16px;">
-        <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:14px;"><input type="radio" name="party" value="yes" ${r.afterparty?'checked':''}> 참석</label>
-        <label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:14px;"><input type="radio" name="party" value="no" ${!r.afterparty?'checked':''}> 불참</label>
+        <label style="${radioLbl}"><input type="radio" name="party" value="yes" ${r.afterparty?'checked':''}> 참석</label>
+        <label style="${radioLbl}"><input type="radio" name="party" value="no" ${!r.afterparty?'checked':''}> 불참</label>
       </div>
     </div>
   </div>`;
+
   openModal(`${esc(m.name)}님 참석 정보`,body,async()=>{
     const v=document.querySelector('input[name=att]:checked')?.value;
     const attending=v==='yes'?true:v==='no'?false:null;
     const r=rec(memberId);
     r.attending=attending;
     if(attending===true){
-      const mv=document.getElementById('popMovie')?.value||'';
-      const [mid,mt]=mv.split('::');
-      r.movieId=mid||null;r.movieTime=mt||null;
+      r.movieId=document.querySelector('input[name=popmovie]:checked')?.value||null;
+      r.movieTime=document.querySelector('input[name=poptime]:checked')?.value||null;
       r.afterparty=document.querySelector('input[name=party]:checked')?.value==='yes';
     } else {
       r.movieId=null;r.movieTime=null;r.afterparty=false;r.ticketGiven=false;
@@ -1099,12 +1146,31 @@ function openAttendancePopup(memberId){
     await saveMonth();renderActivity();updateSummaryCards();renderFinance();
     toast('저장되었습니다 ✓');
   },'저장');
+
   setTimeout(()=>{
+    // 참석 여부 변경 시 영화/시간/뒷풀이 섹션 표시/숨김
     document.querySelectorAll('input[name=att]').forEach(radio=>{
       radio.onchange=()=>{
         const show=document.querySelector('input[name=att]:checked')?.value==='yes';
         document.getElementById('popMovieWrap').style.display=show?'':'none';
         document.getElementById('popPartyWrap').style.display=show?'':'none';
+        if(!show) document.getElementById('popTimeWrap').style.display='none';
+      };
+    });
+    // 영화 선택 시 시간 옵션 동적 업데이트
+    document.querySelectorAll('input[name=popmovie]').forEach(radio=>{
+      radio.onchange=()=>{
+        const mv=cur.movies.find(m=>m.id===radio.value);
+        const times=mv?(mv.times||[]):[];
+        const wrap=document.getElementById('popTimeWrap');
+        const opts=document.getElementById('popTimeOptions');
+        if(times.length){
+          opts.innerHTML=times.map(t=>`<label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-size:14px;padding:3px 0"><input type="radio" name="poptime" value="${t}"> ${t}</label>`).join('');
+          wrap.style.display='';
+        } else {
+          opts.innerHTML='';
+          wrap.style.display='none';
+        }
       };
     });
   },50);
@@ -1889,6 +1955,21 @@ function addMovie(){
       toast(title+' 추가됨');
     },'추가','primary');
   setTimeout(()=>{const el=document.getElementById('nm-title');if(el)el.focus();},50);
+}
+function editMovie(id){
+  const mv=cur.movies.find(m=>m.id===id); if(!mv) return;
+  openModal('상영작 수정',
+    `<div class="field"><label>영화 제목</label><input id="em-mv-title" type="text" value="${esc(mv.title)}"></div>
+     <div class="field"><label>상영 시간 <span style="font-size:11px;color:var(--ink3);font-weight:400">(쉼표로 구분, 예: 17:30, 18:05)</span></label><input id="em-mv-time" type="text" value="${esc((mv.times||[]).join(', '))}"></div>`,
+    ()=>{
+      const title=document.getElementById('em-mv-title').value.trim();
+      if(!title){toast('영화 제목을 입력하세요');return false;}
+      const times=document.getElementById('em-mv-time').value.split(',').map(t=>t.trim()).filter(Boolean);
+      mv.title=title; mv.times=times;
+      saveMonth(); renderActivity(); renderReview(); renderFinance();
+      toast('수정되었습니다');
+    },'저장','primary');
+  setTimeout(()=>{const el=document.getElementById('em-mv-title');if(el)el.focus();},50);
 }
 function deleteMovie(id){
   openModal('상영작 삭제',`<p style="color:var(--ink2);font-size:14px;line-height:1.6">이 영화를 삭제하면 관련 관람 선택과 영화비 항목도 함께 삭제됩니다. 계속할까요?</p>`,
