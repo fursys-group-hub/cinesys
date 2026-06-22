@@ -875,8 +875,10 @@ async function saveIndex(){ await sSet(KEY_INDEX, monthIndex); }
 function rec(id){ if(!cur.records[id]) cur.records[id]={attending:null,movieId:null,movieTime:null,seat:'',afterparty:false,ticketGiven:false}; if(cur.records[id].movieTime===undefined) cur.records[id].movieTime=null; return cur.records[id]; }
 function partyExp(id){
   if(!cur.finance.partyExpenses) cur.finance.partyExpenses={};
-  if(!cur.finance.partyExpenses[id]) cur.finance.partyExpenses[id]={amount:0,reimbursed:false};
-  return cur.finance.partyExpenses[id];
+  if(!cur.finance.partyExpenses[id]) cur.finance.partyExpenses[id]={amount:0,reimbursed:false,item:''};
+  const p=cur.finance.partyExpenses[id];
+  if(p.item===undefined) p.item='';
+  return p;
 }
 function excPay(id){
   if(!cur.finance.excessPayments) cur.finance.excessPayments={};
@@ -1647,13 +1649,14 @@ function renderPartyExpense(){
     totalBox.innerHTML = '';
     return;
   }
-  let h = `<thead><tr><th>이름</th><th class="admin-only">계좌번호</th><th>사용 금액(원)</th><th>정산 완료</th></tr></thead><tbody>`;
+  let h = `<thead><tr><th>이름</th><th>항목</th><th class="admin-only">계좌번호</th><th>사용 금액(원)</th><th>정산 완료</th></tr></thead><tbody>`;
   party.forEach(m=>{
     const p = partyExp(m.id);
     const isT = isTreasurer(m.id);
     const acct = [m.bank, m.account].filter(Boolean).join(' ') || '-';
     h += `<tr data-id="${m.id}">
       <td class="name">${esc(m.name)}</td>
+      <td><input type="text" data-act="pe-item" value="${esc(p.item||'')}" placeholder="예) 치킨, 음료" style="width:100%;max-width:150px"${isAdmin()?'':' disabled'}></td>
       <td class="admin-only" style="font-size:12px;color:var(--ink2)">${esc(acct)}</td>
       <td><input type="number" class="num" data-act="pe-amt" value="${p.amount||''}" placeholder="0"${isAdmin()?'':' disabled'}></td>
       <td>${isT
@@ -1667,6 +1670,7 @@ function renderPartyExpense(){
   if(isAdmin()){
     t.querySelectorAll('tr[data-id]').forEach(tr=>{
       const id = tr.dataset.id;
+      const item = tr.querySelector('[data-act=pe-item]'); if(item) item.onchange = e=>{partyExp(id).item=e.target.value.trim();saveMonth();};
       const amt = tr.querySelector('[data-act=pe-amt]'); if(amt) amt.onchange = e=>{partyExp(id).amount=Number(e.target.value)||0;saveMonth();renderFinance();};
       const rb = tr.querySelector('[data-act=pe-rb]'); if(rb) rb.onclick = ()=>{partyExp(id).reimbursed=!partyExp(id).reimbursed;saveMonth();renderPartyExpense();};
     });
