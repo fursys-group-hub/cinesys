@@ -705,7 +705,7 @@ const TMDB_KEY='f0450860e75128ce0e1cf31939afef97';
 const TMDB_IMG='https://image.tmdb.org/t/p/w500';
 const KOBIS_KEY='60726c1947f566bdb38945b5c050bb7c';
 
-const COMPANIES = ['퍼시스','퍼시스홀딩스','일룸','시디즈','기타'];
+const COMPANIES = ['퍼시스','퍼시스홀딩스','일룸','일룸홀딩스','시디즈','기타'];
 
 /* ============== Seed ============== */
 function seedMembers(){
@@ -1548,7 +1548,9 @@ function renderFinOverview(){
   } else if(partyPpl.length===0){
     callout.innerHTML = `<div class="callout warn"><div class="ct">⚠ 뒷풀이 참석자 없음</div><div class="cb">초과액 ${fmt(diff)}원이지만 뒷풀이 참석자가 없어 정산 대상이 없어요.</div></div>`;
   } else {
-    callout.innerHTML = `<div class="callout warn"><div class="ct">⚠ 2차 정산 필요</div><div class="cb">초과 <b style="color:var(--burgundy)">${fmt(diff)}원</b> → 뒷풀이 ${partyPpl.length}명이 <b style="color:var(--burgundy)">1인당 ${fmt(shareEach)}원</b> 씩 총무에게 입금합니다.</div></div>`;
+    const treasurer = members.find(m=>m.role==='총무');
+    const treasurerName = treasurer ? `<b style="color:var(--sepia)">${esc(treasurer.name)}</b> 총무님` : '총무';
+    callout.innerHTML = `<div class="callout warn"><div class="ct">⚠ 2차 정산 필요</div><div class="cb">초과 <b style="color:var(--burgundy)">${fmt(diff)}원</b> → 뒷풀이 ${partyPpl.length}명이 <b style="color:var(--burgundy)">1인당 ${fmt(shareEach)}원</b>씩 ${treasurerName}에게 입금합니다.</div></div>`;
   }
 }
 
@@ -1904,7 +1906,7 @@ function addMember(){
      <div class="field"><label>로그인 이메일 <span style="font-size:11px;color:var(--sepia);font-weight:400">멤버 인증에 사용됩니다</span></label><input id="em-email" type="email" placeholder="example@fursys.com"></div>
      <div class="field"><label>등급</label><select id="em-role">${roleOpts}</select></div>
      <div class="grid2">
-       <div class="field"><label>소속 법인</label><select id="em-co">${compOpts}</select></div>
+       <div class="field"><label>소속 법인</label><select id="em-co" onchange="var e=document.getElementById('em-co-etc');e.style.display=this.value==='기타'?'block':'none'">${compOpts}</select><input id="em-co-etc" type="text" placeholder="법인명 직접 입력" style="display:none;margin-top:6px"></div>
        <div class="field"><label>소속 팀</label><input id="em-team" type="text" placeholder="팀명"></div>
      </div>
      <div class="grid2">
@@ -1919,11 +1921,13 @@ function addMember(){
     ()=>{
       const name=document.getElementById('em-n').value.trim();
       if(!name){toast('이름을 입력하세요');return false;}
+      const coSel=document.getElementById('em-co').value;
+      const coEtc=document.getElementById('em-co-etc').value.trim();
       members.push({
         id:uid(), name,
         email:document.getElementById('em-email').value.trim().toLowerCase(),
         role:document.getElementById('em-role').value||'회원',
-        company:document.getElementById('em-co').value||'',
+        company:coSel==='기타'?(coEtc||'기타'):coSel,
         team:document.getElementById('em-team').value.trim(),
         joinDate:document.getElementById('em-join').value,
         leaveDate:document.getElementById('em-leave').value,
@@ -1939,14 +1943,16 @@ function addMember(){
 
 function editMember(id){
   const m=memberById(id);
-  const compOpts = COMPANIES.map(c=>`<option value="${c}" ${(m.company||'')===c?'selected':''}>${c}</option>`).join('');
+  const isCustomCo = !!(m.company && !COMPANIES.includes(m.company));
+  const coSelected = isCustomCo ? '기타' : (m.company||'');
+  const compOpts = COMPANIES.map(c=>`<option value="${c}" ${coSelected===c?'selected':''}>${c}</option>`).join('');
   const roleOpts = ['회원','회장','총무'].map(r=>`<option value="${r}" ${(m.role||'회원')===r?'selected':''}>${r}</option>`).join('');
   openModal('멤버 수정',
     `<div class="field"><label>이름</label><input id="em-n" type="text" value="${esc(m.name)}"></div>
      <div class="field"><label>로그인 이메일 <span style="font-size:11px;color:var(--sepia);font-weight:400">멤버 인증에 사용됩니다</span></label><input id="em-email" type="email" value="${esc(m.email||'')}" placeholder="example@fursys.com"></div>
      <div class="field"><label>등급</label><select id="em-role">${roleOpts}</select></div>
      <div class="grid2">
-       <div class="field"><label>소속 법인</label><select id="em-co">${compOpts}</select></div>
+       <div class="field"><label>소속 법인</label><select id="em-co" onchange="var e=document.getElementById('em-co-etc');e.style.display=this.value==='기타'?'block':'none'">${compOpts}</select><input id="em-co-etc" type="text" placeholder="법인명 직접 입력" value="${esc(isCustomCo?m.company:'')}" style="display:${isCustomCo?'block':'none'};margin-top:6px"></div>
        <div class="field"><label>소속 팀</label><input id="em-team" type="text" value="${esc(m.team||'')}"></div>
      </div>
      <div class="grid2">
@@ -1961,10 +1967,12 @@ function editMember(id){
     ()=>{
       const nn=document.getElementById('em-n').value.trim();
       if(!nn){toast('이름을 입력하세요');return false;}
+      const coSel=document.getElementById('em-co').value;
+      const coEtc=document.getElementById('em-co-etc').value.trim();
       m.name=nn;
       m.email=document.getElementById('em-email').value.trim().toLowerCase();
       m.role=document.getElementById('em-role').value||'회원';
-      m.company=document.getElementById('em-co').value||'';
+      m.company=coSel==='기타'?(coEtc||'기타'):coSel;
       m.team=document.getElementById('em-team').value.trim();
       m.joinDate=document.getElementById('em-join').value;
       m.leaveDate=document.getElementById('em-leave').value;
