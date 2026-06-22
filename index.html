@@ -1121,6 +1121,10 @@ function openAttendancePopup(memberId){
       <div style="${lbl}">상영 시간</div>
       <div id="popTimeOptions" style="display:flex;gap:14px;flex-wrap:wrap;">${initTimeHtml}</div>
     </div>
+    <div id="popSeatWrap" style="${r.attending===true?'':'display:none'}">
+      <div style="${lbl}">선호 좌석</div>
+      <input id="popSeat" type="text" placeholder="예) A12, B5-B6" value="${esc(r.seat||'')}" style="width:100%;font-size:13.5px;padding:8px 10px;border:1px solid var(--line);border-radius:3px;font-family:inherit;">
+    </div>
     <div id="popPartyWrap" style="${r.attending===true?'':'display:none'}">
       <div style="${lbl}">뒷풀이 참석</div>
       <div style="display:flex;gap:16px;">
@@ -1138,9 +1142,10 @@ function openAttendancePopup(memberId){
     if(attending===true){
       r.movieId=document.querySelector('input[name=popmovie]:checked')?.value||null;
       r.movieTime=document.querySelector('input[name=poptime]:checked')?.value||null;
+      r.seat=document.getElementById('popSeat')?.value.trim()||'';
       r.afterparty=document.querySelector('input[name=party]:checked')?.value==='yes';
     } else {
-      r.movieId=null;r.movieTime=null;r.afterparty=false;r.ticketGiven=false;
+      r.movieId=null;r.movieTime=null;r.seat='';r.afterparty=false;r.ticketGiven=false;
     }
     await saveMonth();renderActivity();updateSummaryCards();renderFinance();
     toast('저장되었습니다 ✓');
@@ -1151,6 +1156,7 @@ function openAttendancePopup(memberId){
       radio.onchange=()=>{
         const show=document.querySelector('input[name=att]:checked')?.value==='yes';
         document.getElementById('popMovieWrap').style.display=show?'':'none';
+        document.getElementById('popSeatWrap').style.display=show?'':'none';
         document.getElementById('popPartyWrap').style.display=show?'':'none';
         if(!show) document.getElementById('popTimeWrap').style.display='none';
       };
