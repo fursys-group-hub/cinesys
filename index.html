@@ -511,6 +511,10 @@
     <div class="panel">
       <h2><span class="ic">🍻</span> 간식 / 뒷풀이비</h2>
       <div class="desc">참석자 전원이 표시됩니다. 각자 쓴 금액을 입력하고 정산 여부를 체크하세요.</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <button class="btn sm primary" id="uploadReceiptBtn">📸 영수증 업로드</button>
+      </div>
+      <div id="receiptsContainer"></div>
       <div class="scroll">
         <table class="tbl" id="partyExpenseTbl"></table>
       </div>
@@ -1518,9 +1522,15 @@ function renderFinance(){
   ppEl.disabled = !isAdmin();
   renderFinOverview();
   renderMovieCosts();
+  renderReceipts();
   renderPartyExpense();
   renderPartyTable();
   renderEpVoucher();
+
+  setTimeout(()=>{
+    const uploadBtn = document.getElementById('uploadReceiptBtn');
+    if(uploadBtn && currentUser) uploadBtn.onclick = uploadReceiptModal;
+  }, 50);
 }
 
 function renderEpVoucher(){
@@ -1682,6 +1692,76 @@ function renderPartyExpense(){
     });
   }
   totalBox.innerHTML = `<div class="cost-total" style="margin-top:10px"><span class="lbl">총 간식/뒷풀이비</span><span class="amount">${fmt(calcPartyTotal())}원</span></div>`;
+}
+
+function uploadReceiptModal(){
+  const m=currentUser; if(!m) return;
+  let fileData=null;
+  const body=`<div style="display:flex;flex-direction:column;gap:14px;">
+    <div class="field"><label>영수증 이미지</label>
+      <input id="receiptFile" type="file" accept="image/*" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:3px;">
+      <div id="receiptPreview" style="margin-top:8px;max-height:150px;border-radius:3px;overflow:hidden;"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label>금액</label><input id="receiptAmount" type="number" placeholder="0" style="width:100%;"></div>
+      <div class="field"><label>분류</label><select id="receiptType" style="width:100%;"><option value="snack">간식</option><option value="afterparty">뒷풀이비</option></select></div>
+    </div>
+    <div class="field"><label>설명 (선택)</label><input id="receiptDesc" type="text" placeholder="예) 편의점, 카페" style="width:100%;"></div>
+  </div>`;
+  openModal('영수증 업로드',body,async()=>{
+    if(!fileData){toast('이미지를 선택하세요');return false;}
+    const amt=Number(document.getElementById('receiptAmount').value);
+    if(amt<=0){toast('금액을 입력하세요');return false;}
+    const type=document.getElementById('receiptType').value;
+    const desc=document.getElementById('receiptDesc').value.trim();
+    if(!cur.finance.receipts) cur.finance.receipts=[];
+    cur.finance.receipts.push({id:uid(),memberId:m.id,memberName:m.name,type,amount:amt,image:fileData,description:desc,uploadedAt:new Date().toISOString(),settled:false});
+    await saveMonth();renderFinance();toast('영수증이 업로드되었습니다');
+  },'업로드','primary');
+  const fileInput=document.getElementById('receiptFile');
+  fileInput.onchange=(e)=>{
+    const file=e.target.files[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=(event)=>{
+      fileData=event.target.result;
+      const preview=document.getElementById('receiptPreview');
+      preview.innerHTML=`<img src="${fileData}" style="width:100%;height:auto;object-fit:cover;border-radius:3px;">`;
+    };
+    reader.readAsDataURL(file);
+  };
+}
+
+function renderReceipts(){
+  const cont=document.getElementById('receiptsContainer');
+  if(!cur.finance.receipts||!cur.finance.receipts.length){cont.innerHTML='';return;}
+  const unsettled=cur.finance.receipts.filter(r=>!r.settled);
+  if(!unsettled.length){cont.innerHTML='';return;}
+  let h=`<div style="margin-bottom:14px;padding:12px;background:var(--bg1);border-radius:6px;">
+    <div style="font-size:12px;font-weight:600;color:var(--ink2);margin-bottom:10px;">📸 업로드된 영수증 (${unsettled.length}건)</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;">`;
+  unsettled.forEach(r=>{
+    h+=`<div style="position:relative;border-radius:6px;overflow:hidden;background:var(--bg2);aspect-ratio:1;">
+      <img src="${r.image}" style="width:100%;height:100%;object-fit:cover;">
+      <div style="position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);opacity:0;transition:opacity.2s;padding:8px;display:flex;flex-direction:column;justify-content:space-between;color:white;font-size:11px;" class="receipt-hover">
+        <div><strong>${r.memberName}</strong></div>
+        <div>${fmt(r.amount)}원<br>${r.type==='snack'?'간식':'뒷풀이'}</div>
+      </div>
+      <div style="position:absolute;top:0;right:0;left:0;bottom:0;" data-id="${r.id}" onmouseover="this.parentElement.querySelector('.receipt-hover').style.opacity='1'" onmouseout="this.parentElement.querySelector('.receipt-hover').style.opacity='0'"></div>
+      ${isAdmin()?`<button class="btn xs ghost" style="position:absolute;bottom:2px;right:2px;padding:3px 6px;font-size:10px;" data-act="settle-receipt" data-id="${r.id}">✓</button>`:''}
+    </div>`;
+  });
+  h+=`</div></div>`;
+  cont.innerHTML=h;
+  if(isAdmin()){
+    cont.querySelectorAll('[data-act="settle-receipt"]').forEach(btn=>{
+      btn.onclick=()=>{
+        const id=btn.dataset.id;
+        const r=cur.finance.receipts.find(x=>x.id===id);
+        if(r) r.settled=true;
+        saveMonth();renderFinance();
+      };
+    });
+  }
 }
 
 function renderResultCards(){
