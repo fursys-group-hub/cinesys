@@ -1648,9 +1648,10 @@ function renderMovieCosts(){
     const attRecs = Object.values(cur.records).filter(r=>r.attending&&r.movieId===mv.id);
     if(!attRecs.length) return;
     const timeMap = {};
-    attRecs.forEach(r=>{ const t=r.movieTime||''; timeMap[t]=(timeMap[t]||0)+1; });
-    Object.entries(timeMap).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([t,cnt])=>{
-      slots.push({mv, movieId:mv.id, movieTime:t, attCnt:cnt});
+    attRecs.forEach(r=>{ const t=r.movieTime||''; timeMap[t]=(timeMap[t]||[]); timeMap[t].push(r); });
+    Object.entries(timeMap).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([t,recs])=>{
+      const names = recs.map(r=>{const m=members.find(x=>x.id===Object.keys(cur.records).find(k=>cur.records[k]===r)); return m?m.name:'?';}).sort().join(', ');
+      slots.push({mv, movieId:mv.id, movieTime:t, attCnt:recs.length, attendees:names});
     });
   });
 
@@ -1668,10 +1669,10 @@ function renderMovieCosts(){
     prevMovieId = s.movieId;
     const saved = (cur.finance.movieCosts||[]).find(c=>c.movieId===s.movieId&&(c.movieTime||'')===s.movieTime);
     const amt = saved ? saved.amount : '';
-    h += `<tr data-movie="${esc(s.movieId)}" data-time="${esc(s.movieTime)}">
+    h += `<tr data-movie="${esc(s.movieId)}" data-time="${esc(s.movieTime)}" title="${s.attendees}">
       <td class="mcr-movie">${isFirst?'🎬 '+esc(s.mv.title):''}</td>
       <td class="mcr-time">${s.movieTime||'-'}</td>
-      <td class="mcr-cnt">${s.attCnt}명</td>
+      <td class="mcr-cnt" style="font-size:12.5px;">${esc(s.attendees)}</td>
       <td class="mcr-amt">
         <input type="number" data-act="movie-amt" value="${amt}" placeholder="0"${isAdmin()?'':' disabled'}>
         <span class="unit">원</span>
@@ -1706,16 +1707,18 @@ function renderPartyExpense(){
     totalBox.innerHTML = '';
     return;
   }
-  let h = `<thead><tr><th>이름</th><th>항목</th><th class="admin-only">계좌번호</th><th>사용 금액(원)</th><th>정산 완료</th></tr></thead><tbody>`;
+  let h = `<thead><tr><th>이름</th><th>항목</th><th class="admin-only">계좌번호</th><th>사용 금액(원)</th><th>영수증</th><th>정산 완료</th></tr></thead><tbody>`;
   party.forEach(m=>{
     const p = partyExp(m.id);
     const isT = isTreasurer(m.id);
     const acct = [m.bank, m.account].filter(Boolean).join(' ') || '-';
+    const recCount = (cur.finance.memberReceipts||{})[m.id]?.filter(r=>!r.settled).length||0;
     h += `<tr data-id="${m.id}">
       <td class="name">${esc(m.name)}</td>
       <td><input type="text" data-act="pe-item" value="${esc(p.item||'')}" placeholder="예) 치킨, 음료" style="width:100%;max-width:150px"${isAdmin()?'':' disabled'}></td>
       <td class="admin-only" style="font-size:12px;color:var(--ink2)">${esc(acct)}</td>
       <td><input type="number" class="num" data-act="pe-amt" value="${p.amount||''}" placeholder="0"${isAdmin()?'':' disabled'}></td>
+      <td style="text-align:center"><button class="btn xs ghost" data-act="upload-receipt" data-member-id="${m.id}" style="padding:4px 8px;">📸 ${recCount}건</button></td>
       <td>${isT
         ? '<span class="pill self">총무 (면제)</span>'
         : isAdmin()
@@ -1724,6 +1727,9 @@ function renderPartyExpense(){
     </tr>`;
   });
   h += '</tbody>'; t.innerHTML = h;
+  t.querySelectorAll('[data-act=upload-receipt]').forEach(btn=>{
+    btn.onclick=()=>uploadReceiptForMember(btn.dataset.memberId);
+  });
   if(isAdmin()){
     t.querySelectorAll('tr[data-id]').forEach(tr=>{
       const id = tr.dataset.id;
@@ -1733,6 +1739,46 @@ function renderPartyExpense(){
     });
   }
   totalBox.innerHTML = `<div class="cost-total" style="margin-top:10px"><span class="lbl">총 간식/뒷풀이비</span><span class="amount">${fmt(calcPartyTotal())}원</span></div>`;
+}
+
+function uploadReceiptForMember(memberId){
+  const m=members.find(x=>x.id===memberId); if(!m) return;
+  let fileData=null;
+  const body=`<div style="display:flex;flex-direction:column;gap:14px;">
+    <div class="field"><label>영수증 이미지</label>
+      <input id="receiptFile" type="file" accept="image/*" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:3px;">
+      <div id="receiptPreview" style="margin-top:8px;max-height:150px;border-radius:3px;overflow:hidden;"></div>
+    </div>
+    <div class="grid2">
+      <div class="field"><label>금액</label><input id="receiptAmount" type="number" placeholder="0" style="width:100%;"></div>
+      <div class="field"><label>분류</label><select id="receiptType" style="width:100%;"><option value="snack">간식</option><option value="afterparty">뒷풀이비</option></select></div>
+    </div>
+    <div class="field"><label>설명 (선택)</label><input id="receiptDesc" type="text" placeholder="예) 편의점, 카페" style="width:100%;"></div>
+  </div>`;
+  openModal(`${esc(m.name)}님 영수증 업로드`,body,async()=>{
+    if(!fileData){toast('이미지를 선택하세요');return false;}
+    const amt=Number(document.getElementById('receiptAmount').value);
+    if(amt<=0){toast('금액을 입력하세요');return false;}
+    const type=document.getElementById('receiptType').value;
+    const desc=document.getElementById('receiptDesc').value.trim();
+    if(!cur.finance.memberReceipts) cur.finance.memberReceipts={};
+    if(!cur.finance.memberReceipts[memberId]) cur.finance.memberReceipts[memberId]=[];
+    cur.finance.memberReceipts[memberId].push({id:uid(),image:fileData,amount:amt,type,description:desc,uploadedAt:new Date().toISOString(),settled:false});
+    const p=partyExp(memberId);
+    p.amount=(p.amount||0)+amt;
+    await saveMonth();renderFinance();toast('영수증이 업로드되었습니다. 금액이 자동으로 추가되었습니다.');
+  },'업로드','primary');
+  const fileInput=document.getElementById('receiptFile');
+  fileInput.onchange=(e)=>{
+    const file=e.target.files[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=(event)=>{
+      fileData=event.target.result;
+      const preview=document.getElementById('receiptPreview');
+      preview.innerHTML=`<img src="${fileData}" style="width:100%;height:auto;object-fit:cover;border-radius:3px;">`;
+    };
+    reader.readAsDataURL(file);
+  };
 }
 
 function uploadReceiptModal(){
