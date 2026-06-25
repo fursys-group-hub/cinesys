@@ -1738,7 +1738,12 @@ function renderPartyExpense(){
       const rb = tr.querySelector('[data-act=pe-rb]'); if(rb) rb.onclick = ()=>{partyExp(id).reimbursed=!partyExp(id).reimbursed;saveMonth();renderPartyExpense();};
     });
   }
-  totalBox.innerHTML = `<div class="cost-total" style="margin-top:10px"><span class="lbl">총 간식/뒷풀이비</span><span class="amount">${fmt(calcPartyTotal())}원</span></div>`;
+  const partyPpl = partyAttendees();
+  const totalSpend = calcMovieTotal() + calcPartyTotal();
+  const subsidy = calcSubsidy();
+  const diff = totalSpend - subsidy;
+  const shareEach = (diff > 0 && partyPpl.length > 0) ? Math.ceil(diff / partyPpl.length) : 0;
+  totalBox.innerHTML = `<div class="cost-total" style="margin-top:10px"><span class="lbl">총 간식/뒷풀이비</span><span class="amount">${fmt(calcPartyTotal())}원</span></div>${diff>0?`<div class="cost-total" style="margin-top:10px;padding:12px;background:var(--paper2);border-radius:6px;border-left:4px solid var(--sepia);"><div style="font-size:12px;color:var(--ink3);margin-bottom:6px;">📊 1인당 정산액</div><div style="font-size:20px;font-weight:600;color:var(--sepia);">${fmt(shareEach)}원</div><div style="font-size:11px;color:var(--ink3);margin-top:6px;">뒷풀이 ${partyPpl.length}명 기준</div></div>`:''}`;
 }
 
 function uploadReceiptForMember(memberId){
