@@ -528,6 +528,14 @@
         <table class="tbl" id="partyTbl"></table>
       </div>
     </div>
+
+    <div class="panel">
+      <h2><span class="ic">💰</span> 회원별 정산액 상세</h2>
+      <div class="desc">각 회원이 정산해야 할 금액을 확인하세요. 정산 완료 시 체크해주세요.</div>
+      <div class="scroll">
+        <table class="tbl" id="settlementDetailTbl"></table>
+      </div>
+    </div>
   </section>
 
   <!-- LIBRARY -->
@@ -1525,6 +1533,7 @@ function renderFinance(){
   renderReceipts();
   renderPartyExpense();
   renderPartyTable();
+  renderSettlementDetail();
   renderEpVoucher();
 
   setTimeout(()=>{
@@ -1810,6 +1819,44 @@ function renderReceipts(){
         const r=cur.finance.receipts.find(x=>x.id===id);
         if(r) r.settled=true;
         saveMonth();renderFinance();
+      };
+    });
+  }
+}
+
+function renderSettlementDetail(){
+  const t = document.getElementById('settlementDetailTbl');
+  const party = partyAttendees();
+  const diff = calcTotalSpend() - calcSubsidy();
+  const shareEach = (diff > 0 && party.length > 0) ? Math.ceil(diff / party.length) : 0;
+
+  if(!party.length || diff <= 0){
+    t.innerHTML = '<tbody><tr><td><div class="empty">정산 대상 없음</div></td></tr></tbody>';
+    return;
+  }
+
+  let h = `<thead><tr><th>회원명</th><th style="text-align:right">1인당 정산액</th><th>정산 상태</th></tr></thead><tbody>`;
+  party.forEach(m=>{
+    const p = excPay(m.id);
+    h += `<tr data-id="${m.id}">
+      <td>${esc(m.name)}</td>
+      <td style="text-align:right;font-weight:600;color:var(--burgundy)">${fmt(shareEach)}원</td>
+      <td>${isAdmin()
+        ? `<span class="chip ${p.paid?'on green':''}" data-act="settle" style="cursor:pointer;">${p.paid?'정산완료':'미정산'}</span>`
+        : `<span class="pill ${p.paid?'green':''}" style="opacity:.85">${p.paid?'정산완료':'미정산'}</span>`}</td>
+    </tr>`;
+  });
+  h += '</tbody>';
+  t.innerHTML = h;
+
+  if(isAdmin()){
+    t.querySelectorAll('[data-act=settle]').forEach(chip=>{
+      chip.onclick = ()=>{
+        const id = chip.closest('tr').dataset.id;
+        const p = excPay(id);
+        p.paid = !p.paid;
+        saveMonth();
+        renderSettlementDetail();
       };
     });
   }
