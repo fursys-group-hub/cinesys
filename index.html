@@ -168,15 +168,15 @@
   /* Movie cost table */
   .mcr-tbl{width:100%;border-collapse:collapse;margin-bottom:12px;}
   .mcr-tbl thead th{font-family:'Montserrat',sans-serif;font-size:10.5px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.8px;padding:0 8px 8px;border-bottom:2px solid var(--line2);text-align:left;}
-  .mcr-tbl thead th:last-child{text-align:right;}
+  .mcr-tbl thead th:last-child{text-align:left;}
   .mcr-tbl tbody tr{border-bottom:1px solid var(--line);}
   .mcr-tbl tbody tr:last-child{border-bottom:none;}
   .mcr-tbl td{padding:9px 8px;font-size:13.5px;vertical-align:middle;}
   .mcr-tbl td.mcr-movie{font-weight:600;color:var(--ink);white-space:nowrap;}
   .mcr-tbl td.mcr-time{color:var(--ink2);font-family:'Montserrat',sans-serif;font-size:12.5px;font-weight:500;}
-  .mcr-tbl td.mcr-cnt{color:var(--ink3);font-size:12px;text-align:center;}
-  .mcr-tbl td.mcr-amt{text-align:right;}
-  .mcr-tbl td.mcr-amt input{width:100px;text-align:right;padding:5px 8px;font-size:13px;}
+  .mcr-tbl td.mcr-cnt{color:var(--ink3);font-size:12px;text-align:left;}
+  .mcr-tbl td.mcr-amt{text-align:left;}
+  .mcr-tbl td.mcr-amt input{width:100px;text-align:left;padding:5px 8px;font-size:13px;}
   .mcr-tbl td.mcr-amt .unit{font-size:12px;color:var(--ink3);margin-left:3px;}
   /* cost total row */
   .cost-total{display:flex;justify-content:space-between;align-items:center;padding:11px 14px;background:var(--paper);border:1.5px solid var(--sepia-dim);border-radius:4px;margin-top:10px;}
@@ -1625,7 +1625,7 @@ function renderMovieCosts(){
   }
 
   let h=`<table class="mcr-tbl"><thead><tr>
-    <th>영화</th><th>시간</th><th style="text-align:center">인원</th><th style="text-align:right">지출액</th>
+    <th>영화</th><th>시간</th><th>인원</th><th>지출액</th>
   </tr></thead><tbody>`;
   let prevMovieId=null;
   slots.forEach(s=>{
@@ -1690,7 +1690,12 @@ function renderPartyExpense(){
   });
   h += '</tbody>'; t.innerHTML = h;
   t.querySelectorAll('[data-act=upload-receipt]').forEach(btn=>{
-    btn.onclick=()=>uploadReceiptForMember(btn.dataset.memberId);
+    const mid=btn.dataset.memberId;
+    btn.onclick=()=>{
+      const recs=(cur.finance?.memberReceipts||{})[mid]||[];
+      if(recs.length) viewReceiptsForMember(mid);
+      else uploadReceiptForMember(mid);
+    };
   });
   if(isAdmin()){
     t.querySelectorAll('tr[data-id]').forEach(tr=>{
@@ -1706,6 +1711,49 @@ function renderPartyExpense(){
   const diff = totalSpend - subsidy;
   const shareEach = (diff > 0 && partyPpl.length > 0) ? Math.ceil(diff / partyPpl.length) : 0;
   totalBox.innerHTML = `<div class="cost-total" style="margin-top:10px"><span class="lbl">총 간식/뒷풀이비</span><span class="amount">${fmt(calcPartyTotal())}원</span></div>`;
+}
+
+function viewReceiptsForMember(memberId){
+  const m=members.find(x=>x.id===memberId); if(!m) return;
+  const receipts=(cur.finance?.memberReceipts||{})[memberId]||[];
+  const admin=isAdmin();
+  const myId=members.find(x=>x.email&&currentUser&&x.email.toLowerCase()===currentUser.email.toLowerCase())?.id;
+  const canUpload=admin||(myId===memberId);
+
+  let imgHtml='';
+  if(receipts.length){
+    imgHtml=receipts.map((r,i)=>{
+      const date=r.uploadedAt?new Date(r.uploadedAt).toLocaleDateString('ko-KR'):'';
+      const typeLabel=r.type==='afterparty'?'뒷풀이비':'간식';
+      const dlBtn=r.image
+        ?`<a href="${r.image}" download="${esc(m.name)}_영수증_${i+1}.jpg" style="display:inline-flex;align-items:center;gap:4px;background:var(--sepia);color:#fff;padding:4px 10px;border-radius:3px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;">⬇ 다운로드</a>`
+        :'';
+      return `<div style="border:1px solid var(--line2);border-radius:4px;overflow:hidden;margin-bottom:12px;">
+        <div style="padding:9px 14px;background:var(--paper2);display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-size:13px;font-weight:500">${typeLabel} · ${fmt(r.amount)}원${r.description?' · '+esc(r.description):''}</span>
+          <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+            <span style="font-size:11px;color:var(--ink3)">${date}</span>
+            ${dlBtn}
+          </div>
+        </div>
+        ${r.image?`<img src="${r.image}" style="width:100%;display:block;max-height:380px;object-fit:contain;background:var(--cream);">`:'<div style="padding:20px;text-align:center;color:var(--ink3);font-size:12px">이미지 없음</div>'}
+      </div>`;
+    }).join('');
+  } else {
+    imgHtml='<div class="empty" style="padding:24px 0">업로드된 영수증이 없습니다.</div>';
+  }
+
+  const uploadRow=canUpload?`<div style="margin-top:4px;padding-top:14px;border-top:1px solid var(--line)"><button class="btn sm primary" id="addReceiptInViewBtn">+ 영수증 추가</button></div>`:'';
+  document.getElementById('modalBox').innerHTML=`
+    <h3>${esc(m.name)}님 영수증 (${receipts.length}건)</h3>
+    <div style="max-height:55vh;overflow-y:auto;padding-right:2px;">${imgHtml}</div>
+    ${uploadRow}
+    <div class="actions"><button class="btn ghost" id="mCancel">닫기</button></div>`;
+  document.getElementById('modalBg').classList.add('show');
+  document.getElementById('mCancel').onclick=closeModal;
+  if(canUpload){
+    document.getElementById('addReceiptInViewBtn')?.addEventListener('click',()=>{closeModal();uploadReceiptForMember(memberId);});
+  }
 }
 
 function uploadReceiptForMember(memberId){
@@ -1882,10 +1930,10 @@ function renderSettlementDetail(){
   const sortedMembers = [...members].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
   let h = `<thead><tr>
     <th>회원명</th><th>영화</th>
-    <th style="text-align:right">지원금</th>
-    <th style="text-align:right">영화비</th>
-    <th style="text-align:right">간식비</th>
-    <th style="text-align:right">정산금</th>
+    <th>지원금</th>
+    <th>영화비</th>
+    <th>간식비</th>
+    <th>정산금</th>
   </tr></thead><tbody>`;
 
   sortedMembers.forEach(m => {
@@ -1906,10 +1954,10 @@ function renderSettlementDetail(){
     h += `<tr>
       <td style="font-weight:500">${esc(m.name)}</td>
       <td style="font-size:12px;color:var(--ink3)">${titleText}</td>
-      <td style="text-align:right">${fmt(subsidy)}원${namesLabel}</td>
-      <td style="text-align:right">${d.movieCost > 0 ? fmt(d.movieCost)+'원' : '-'}</td>
-      <td style="text-align:right">${snack > 0 ? fmt(snack)+'원' : '-'}</td>
-      <td style="text-align:right;font-weight:600;color:${settleColor}">${settleText}</td>
+      <td>${fmt(subsidy)}원${namesLabel}</td>
+      <td>${d.movieCost > 0 ? fmt(d.movieCost)+'원' : '-'}</td>
+      <td>${snack > 0 ? fmt(snack)+'원' : '-'}</td>
+      <td style="font-weight:600;color:${settleColor}">${settleText}</td>
     </tr>`;
   });
   h += '</tbody>';
@@ -2122,7 +2170,7 @@ function renderMembers(){
   const countEl=document.getElementById('memberCount');
   if(countEl) countEl.textContent=`· 총 ${members.length}명`;
   if(!members.length){t.innerHTML='<tbody><tr><td><div class="empty">멤버를 추가해주세요.</div></td></tr></tbody>';return;}
-  let h=`<thead><tr><th>이름</th><th>등급</th><th>소속</th><th>연락처</th><th>가입일자</th><th>은행</th><th>계좌번호</th><th style="text-align:right">관리</th></tr></thead><tbody>`;
+  let h=`<thead><tr><th>이름</th><th>등급</th><th>소속</th><th>연락처</th><th>가입일자</th><th>은행</th><th>계좌번호</th><th>관리</th></tr></thead><tbody>`;
   const sortedMems=[...members].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
   sortedMems.forEach(m=>{
     const role = m.role||'회원';
@@ -2141,7 +2189,7 @@ function renderMembers(){
       <td><span style="font-size:12.5px;color:var(--ink2)">${esc(m.joinDate||'-')}</span></td>
       <td>${esc(m.bank||'-')}</td>
       <td>${esc(m.account||'-')}</td>
-      <td style="text-align:right;white-space:nowrap">
+      <td style="white-space:nowrap">
         <button class="btn sm ghost" data-act="edit">수정</button>
         <button class="btn sm danger ghost" data-act="del">삭제</button></td></tr>`;
   });
