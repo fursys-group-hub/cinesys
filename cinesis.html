@@ -1040,6 +1040,7 @@ function renderActivityTableAdmin(t){
       r.attending=r.attending===null||r.attending===undefined?true:r.attending===true?false:null;
       if(!r.attending){r.movieId=null;r.movieTime=null;r.afterparty=false;r.ticketGiven=false;}
       else if(r.attending&&!r.movieId&&cur.movies[0]){r.movieId=cur.movies[0].id;r.movieTime=(cur.movies[0].times||[])[0]||null;}
+      if(r.attending&&r.movieId) autoAddToLibrary(r.movieId);
       saveMonth();renderActivity();renderFinance();
     };
     const mvSel=tr.querySelector('[data-act=mv-title]');
@@ -1156,6 +1157,7 @@ function openAttendancePopup(memberId){
     } else {
       r.movieId=null;r.movieTime=null;r.seat='';r.afterparty=false;r.ticketGiven=false;
     }
+    if(attending===true&&r.movieId) autoAddToLibrary(r.movieId);
     await saveMonth();renderActivity();updateSummaryCards();renderFinance();
     toast('저장되었습니다 ✓');
   },'저장');
@@ -2495,6 +2497,23 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','
 
 /* ========== LIBRARY ========== */
 async function saveLibrary(){ await sSet(KEY_LIBRARY, library); }
+
+function autoAddToLibrary(movieId){
+  if(!movieId||!curId) return;
+  const mv=(cur.movies||[]).find(m=>m.id===movieId);
+  if(!mv||!mv.title) return;
+  // 같은 월+제목이 이미 있으면 스킵
+  if(library.some(e=>e.watchedMonth===curId&&e.title===mv.title)) return;
+  const entry={
+    id:uid(), title:mv.title, originalTitle:'', year:curId.slice(0,4),
+    watchedMonth:curId, posterUrl:'', tmdbId:null, kobisMovieCd:null,
+    kobisOpenDt:null, rating:null, audienceCount:null,
+    reviewerName:'', epUrl:'', addedAt:new Date().toISOString().slice(0,10)
+  };
+  library.unshift(entry);
+  saveLibrary();
+  toast(`📚 "${mv.title}" 라이브러리에 자동 등록되었습니다.`);
+}
 
 function renderLibrary(){
   const grid=document.getElementById('libGrid');
