@@ -511,9 +511,6 @@
     <div class="panel">
       <h2><span class="ic">🍻</span> 간식 / 뒷풀이비</h2>
       <div class="desc">참석자 전원이 표시됩니다. 각자 쓴 금액을 입력하고 정산 여부를 체크하세요.</div>
-      <div style="display:flex;gap:8px;margin-bottom:12px;">
-        <button class="btn sm primary" id="uploadReceiptBtn">📸 영수증 업로드</button>
-      </div>
       <div id="receiptsContainer"></div>
       <div class="scroll">
         <table class="tbl" id="partyExpenseTbl"></table>
@@ -524,10 +521,6 @@
     <div class="panel">
       <h2><span class="ic">💰</span> 2차 정산</h2>
       <div class="desc">간식/뒷풀이비 초과액을 각 회원별로 정산합니다.</div>
-      <div class="scroll">
-        <table class="tbl" id="settlementDetailTbl"></table>
-      </div>
-    </div>
       <div class="scroll">
         <table class="tbl" id="settlementDetailTbl"></table>
       </div>
@@ -1028,7 +1021,7 @@ function renderActivityTableAdmin(t){
       })():'<span style="color:var(--ink3)">-</span>'}</td>
       <td>${att===true?`<input type="text" data-act="seat" value="${esc(r.seat||'')}" placeholder="좌석" style="width:55px${locked?';opacity:.7':''}"${locked?' disabled':''}>`:'<span style="color:var(--ink3)">-</span>'}</td>
       <td>${att===true?`<span class="chip ${r.ticketGiven?'on green':''}"${locked?' style="cursor:default"':''} data-act="ticket">${r.ticketGiven?'전달':'미전달'}</span>`:'<span style="color:var(--ink3)">-</span>'}</td>
-      <td>${att===true?`<span class="chip ${r.afterparty?'on gold':''}"${locked?' style="cursor:default"':''} data-act="after">${r.afterparty?'참석':'미정'}</span>`:'<span style="color:var(--ink3)">-</span>'}</td>
+      <td>${att===true?`<span class="chip ${r.afterparty?'on gold':''}"${locked?' style="cursor:default"':''} data-act="after">${r.afterparty?'참석':'불참'}</span>`:'<span style="color:var(--ink3)">-</span>'}</td>
       <td>${renderAbsenceCell(absences)}</td>
     </tr>`;
   });
@@ -1083,7 +1076,7 @@ function renderActivityTableMember(t){
       </td>
       <td><span class="chip ${attClass}" style="${clickStyle}" data-id="${m.id}">${attText}</span></td>
       <td style="font-size:13px;color:${mv?'var(--ink)':'var(--ink3)'};">${mv?esc(mv.title)+' <span style="font-family:\'Montserrat\';font-size:11px;">'+esc(r.movieTime||'')+'</span>':'-'}</td>
-      <td>${att===true?`<span class="chip ${r.afterparty?'on gold':''}" style="cursor:default;">${r.afterparty?'참석':'미정'}</span>`:'<span style="color:var(--ink3)">-</span>'}</td>
+      <td>${att===true?`<span class="chip ${r.afterparty?'on gold':''}" style="cursor:default;">${r.afterparty?'참석':'불참'}</span>`:'<span style="color:var(--ink3)">-</span>'}</td>
       <td>${renderAbsenceCell(absences)}</td>
     </tr>`;
   });
@@ -1573,10 +1566,6 @@ function renderFinance(){
   renderSettlementDetail();
   renderEpVoucher();
 
-  setTimeout(()=>{
-    const uploadBtn = document.getElementById('uploadReceiptBtn');
-    if(uploadBtn && currentUser) uploadBtn.onclick = uploadReceiptModal;
-  }, 50);
 }
 
 function renderEpVoucher(){
@@ -1623,7 +1612,6 @@ function renderFinOverview(){
       h += `<div class="fin-stat good"><div class="k">잔액</div><div class="v">${fmt(-diff)}<span class="u">원</span></div></div>`;
     } else {
       h += `<div class="fin-stat bad"><div class="k">초과액</div><div class="v">${fmt(diff)}<span class="u">원</span></div>
-        <div style="font-size:10.5px;color:var(--ink3);margin-top:4px">1인당 ${fmt(shareEach)}원 (뒷풀이 ${partyPpl.length}명)</div>
       </div>`;
     }
   }
@@ -1748,7 +1736,7 @@ function renderPartyExpense(){
   const subsidy = calcSubsidy();
   const diff = totalSpend - subsidy;
   const shareEach = (diff > 0 && partyPpl.length > 0) ? Math.ceil(diff / partyPpl.length) : 0;
-  totalBox.innerHTML = `<div class="cost-total" style="margin-top:10px"><span class="lbl">총 간식/뒷풀이비</span><span class="amount">${fmt(calcPartyTotal())}원</span></div>${diff>0?`<div class="cost-total" style="margin-top:10px;padding:12px;background:var(--paper2);border-radius:6px;border-left:4px solid var(--sepia);"><div style="font-size:12px;color:var(--ink3);margin-bottom:6px;">📊 1인당 정산액</div><div style="font-size:20px;font-weight:600;color:var(--sepia);">${fmt(shareEach)}원</div><div style="font-size:11px;color:var(--ink3);margin-top:6px;">뒷풀이 ${partyPpl.length}명 기준</div></div>`:''}`;
+  totalBox.innerHTML = `<div class="cost-total" style="margin-top:10px"><span class="lbl">총 간식/뒷풀이비</span><span class="amount">${fmt(calcPartyTotal())}원</span></div>`;
 }
 
 function uploadReceiptForMember(memberId){
@@ -1863,51 +1851,89 @@ function renderReceipts(){
 
 function renderSettlementDetail(){
   const tbl = document.getElementById('settlementDetailTbl');
-  if(!cur || !cur.members){
+  if(!cur || !members || !members.length){
     tbl.innerHTML = '<tbody><tr><td><div class="empty">데이터 로딩 중...</div></td></tr></tbody>';
     return;
   }
 
-  const totalSpend = calcTotalSpend();
-  const totalSubsidy = calcSubsidy();
-  const diff = totalSpend - totalSubsidy;
+  const subsidyPer = cur.finance?.perPerson || 30000;
 
-  const partyMembers = cur.members.filter(m => {
-    const exp = cur.finance?.partyExpenses?.[m.id] || {};
-    return exp.amount > 0;
+  // 영화 제목 조회
+  const movieTitleMap = {};
+  (cur.movies||[]).forEach(mv => { movieTitleMap[mv.id] = mv.title; });
+
+  // cur.records로 시간대별 참석자 맵 구성: "movieId|movieTime" -> [memberId, ...]
+  const screeningMap = {};
+  Object.entries(cur.records||{}).forEach(([memberId, rec]) => {
+    if(!rec.attending || !rec.movieId) return;
+    const key = `${rec.movieId}|${rec.movieTime}`;
+    if(!screeningMap[key]) screeningMap[key] = {memberIds:[], movieCost:0};
+    screeningMap[key].memberIds.push(memberId);
   });
 
-  const shareEach = (diff > 0 && partyMembers.length > 0) ? Math.ceil(diff / partyMembers.length) : 0;
+  // movieCosts 배열로 각 시간대 티켓 금액 매핑
+  (cur.finance?.movieCosts||[]).forEach(mc => {
+    const key = `${mc.movieId}|${mc.movieTime}`;
+    if(!screeningMap[key]) screeningMap[key] = {memberIds:[], movieCost:0};
+    screeningMap[key].movieCost = mc.amount || 0;
+  });
 
-  if(!partyMembers.length || diff <= 0){
-    tbl.innerHTML = '<tbody><tr><td><div class="empty">정산 대상 없음</div></td></tr></tbody>';
-    return;
-  }
+  // 회원별 집계
+  const memberData = {};
+  members.forEach(m => { memberData[m.id] = { titles:[], groupCount:0, movieCost:0 }; });
 
-  let h = `<thead><tr><th>회원명</th><th style="text-align:right">지원금</th><th style="text-align:right">영화</th><th style="text-align:right">간식</th><th style="text-align:right">정산금</th></tr></thead><tbody>`;
-
-  cur.members.forEach(m=>{
-    const subsidy = 30000;
-    let movieCost = 0;
-    cur.movies.forEach(mv => {
-      mv.times.forEach(time => {
-        const attenders = cur.attendance?.[mv.id]?.[time]?.members || [];
-        if(attenders.includes(m.id)){
-          const cost = cur.finance?.movieCost?.[mv.id]?.[time] || 0;
-          movieCost += cost;
-        }
+  Object.entries(screeningMap).forEach(([key, {memberIds, movieCost}]) => {
+    if(!memberIds.length) return;
+    const [movieId] = key.split('|');
+    const title = movieTitleMap[movieId] || '';
+    const payers = memberIds.filter(id => (cur.finance?.partyExpenses?.[id]?.amount||0) > 0);
+    if(payers.length > 0){
+      payers.forEach(pid => {
+        memberData[pid].titles.push(title);
+        memberData[pid].groupCount += Math.ceil(memberIds.length / payers.length);
+        memberData[pid].movieCost  += Math.round(movieCost / payers.length);
       });
-    });
+    } else {
+      memberIds.forEach(id => {
+        memberData[id].titles.push(title);
+        memberData[id].groupCount += 1;
+        memberData[id].movieCost  += Math.round(movieCost / memberIds.length);
+      });
+    }
+  });
 
-    const partyCost = cur.finance?.partyExpenses?.[m.id]?.amount || 0;
-    const settlement = partyMembers.includes(m) ? shareEach : 0;
+  const sortedMembers = [...members].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  let h = `<thead><tr>
+    <th>회원명</th><th>영화</th>
+    <th style="text-align:right">지원금</th>
+    <th style="text-align:right">영화비</th>
+    <th style="text-align:right">간식비</th>
+    <th style="text-align:right">정산금</th>
+    <th>은행</th>
+    <th>계좌번호</th>
+  </tr></thead><tbody>`;
 
-    h += `<tr data-id="${m.id}">
-      <td>${esc(m.name)}</td>
-      <td style="text-align:right">${fmt(subsidy)}원</td>
-      <td style="text-align:right">${fmt(movieCost)}원</td>
-      <td style="text-align:right">${fmt(partyCost)}원</td>
-      <td style="text-align:right;font-weight:600;color:${settlement > 0 ? 'var(--burgundy)' : 'var(--ink3)'}">${settlement > 0 ? fmt(settlement)+'원' : '-'}</td>
+  sortedMembers.forEach(m => {
+    const d = memberData[m.id];
+    const snack = cur.finance?.partyExpenses?.[m.id]?.amount || 0;
+    const hasData = d.groupCount > 0 || snack > 0;
+    if(!hasData) return;
+    const subsidy = d.groupCount * subsidyPer;
+    const settle  = subsidy - d.movieCost - snack;
+    const settleColor = settle < 0 ? 'var(--burgundy)' : 'var(--sage)';
+    const settleText  = settle === 0 ? '-'
+      : settle < 0 ? `초과 -${fmt(Math.abs(settle))}원`
+      : `+${fmt(settle)}원`;
+    const titleText = [...new Set(d.titles)].map(t=>`🎬 ${esc(t)}`).join('<br>') || '-';
+    h += `<tr>
+      <td style="font-weight:500">${esc(m.name)}</td>
+      <td style="font-size:12px;color:var(--ink3)">${titleText}</td>
+      <td style="text-align:right">${fmt(subsidy)}원${d.groupCount > 1 ? `<br><span style="font-size:10px;color:var(--ink3);font-weight:400">${d.groupCount}명 담당</span>` : ''}</td>
+      <td style="text-align:right">${d.movieCost > 0 ? fmt(d.movieCost)+'원' : '-'}</td>
+      <td style="text-align:right">${snack > 0 ? fmt(snack)+'원' : '-'}</td>
+      <td style="text-align:right;font-weight:600;color:${settleColor}">${settleText}</td>
+      <td style="font-size:12px;color:var(--ink3)">${esc(m.bank||'-')}</td>
+      <td style="font-size:12px;color:var(--ink3)">${esc(m.account||'-')}</td>
     </tr>`;
   });
   h += '</tbody>';
@@ -1928,9 +1954,7 @@ function renderResultCards(){
       <div style="font-size:11px;color:var(--ink3);margin-top:7px;line-height:1.5">영화 ${fmt(movies)} + 뒷풀이 ${fmt(partyT)}</div></div>
     <div class="stat accent"><div class="k">회사 지원금</div><div class="v">${fmt(subsidy)}<span class="u">원</span></div></div>`;
   if(diff>0){
-    h += `<div class="stat bad"><div class="k">초과액</div><div class="v">${fmt(diff)}<span class="u">원</span></div></div>
-      <div class="stat bad"><div class="k">1인당 정산액</div><div class="v">${fmt(shareEach)}<span class="u">원</span></div>
-        <div style="font-size:11px;color:var(--ink3);margin-top:7px;">뒷풀이 ${party.length}명 기준</div></div>`;
+    h += `<div class="stat bad"><div class="k">초과액</div><div class="v">${fmt(diff)}<span class="u">원</span></div></div>`;
   } else {
     h += `<div class="stat good"><div class="k">잔액 (회사가 충당)</div><div class="v">${fmt(-diff)}<span class="u">원</span></div></div>`;
   }
@@ -1950,6 +1974,7 @@ function renderResultCards(){
 
 function renderPartyTable(){
   const t = document.getElementById('partyTbl');
+  if(!t) return;
   const party = partyAttendees().slice().sort((a,b)=>a.name.localeCompare(b.name,'ko'));
   const diff = calcTotalSpend() - calcSubsidy();
   const shareEach = (diff>0 && party.length>0) ? Math.ceil(diff/party.length) : 0;
@@ -2042,7 +2067,18 @@ function spin(){
     // 관리자: 공식 당첨자 결정 & 저장
     if(!cur.reviewers[mid]){
       cur.reviewers=cur.reviewers||{};
-      cur.reviewers[mid]=a[Math.floor(Math.random()*a.length)].id;
+      // 최근 2달 당첨자 제외 (혼자 영화보면 무조건 당첨)
+      const curIdx = monthIndex.indexOf(curId);
+      const recentWinners = new Set();
+      for(let i=1;i<=2;i++){
+        const prevId = monthIndex[curIdx-i];
+        if(!prevId) break;
+        const prev = monthCache[prevId];
+        if(prev?.reviewers) Object.values(prev.reviewers).forEach(id=>recentWinners.add(id));
+      }
+      const eligible = a.length>1 ? a.filter(m=>!recentWinners.has(m.id)) : a;
+      const pool = eligible.length>0 ? eligible : a;
+      cur.reviewers[mid]=pool[Math.floor(Math.random()*pool.length)].id;
       saveMonth();
     }
     winIdx=a.findIndex(m=>m.id===cur.reviewers[mid]);
