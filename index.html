@@ -391,6 +391,7 @@
       <div class="hero-rule"></div>
       <p class="hero-manifesto">영화 속에는 인생과 철학이 있고 즐거움, 슬픔, 사랑과 평화가 있습니다.</p>
       <p class="hero-manifesto" style="font-size:12px;margin-top:3px;">영화를 좋아하는 이들이 모여 영화를 보고 듣고 맛보고 즐기며 풍요로운 삶을 위한 영감을 얻는 장으로 만들고자 합니다.</p>
+      <p class="hero-manifesto" style="font-size:12px;margin-top:6px;">우리가 함께 본 영화들은 라이브러리에 차곡차곡 쌓여, 씨네시스만의 소중한 영화 추억이 됩니다.</p>
     </div>
 </section>
 
@@ -1803,11 +1804,11 @@ function uploadReceiptForMember(memberId){
     if(!allValid){toast('모든 영수증의 금액을 입력하세요');return false;}
     if(!cur.finance.memberReceipts) cur.finance.memberReceipts={};
     if(!cur.finance.memberReceipts[memberId]) cur.finance.memberReceipts[memberId]=[];
-    const p=partyExp(memberId);
     entries.forEach(e=>{
       cur.finance.memberReceipts[memberId].push({id:uid(),image:e.dataUrl,amount:e.amount,type:e.type,description:e.desc,uploadedAt:new Date().toISOString(),settled:false});
-      p.amount=(p.amount||0)+e.amount;
     });
+    const p=partyExp(memberId);
+    p.amount=cur.finance.memberReceipts[memberId].reduce((s,r)=>s+(r.amount||0),0);
     await saveMonth();renderFinance();toast(`영수증 ${entries.length}장이 업로드되었습니다.`);
   },'업로드','primary');
   document.getElementById('receiptFile').onchange=(e)=>{
@@ -1952,8 +1953,15 @@ function renderSettlementDetail(){
     });
   });
 
-  // 간식/뒷풀이비 payer별 managedMemberIds 기반 지원금 계산
   const partyExpenses = cur.finance?.partyExpenses || {};
+
+  // 다른 payer의 managedMemberIds에 포함된 멤버 → 별도 행 숨김
+  const coveredByPayer = {};
+  Object.entries(partyExpenses).forEach(([payerId, pe]) => {
+    if((pe.amount||0) > 0 && pe.managedMemberIds) {
+      pe.managedMemberIds.forEach(mid => { if(mid !== payerId) coveredByPayer[mid] = payerId; });
+    }
+  });
 
   const sortedMembers = [...members].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
   let h = `<thead><tr>
@@ -1965,19 +1973,28 @@ function renderSettlementDetail(){
   </tr></thead><tbody>`;
 
   sortedMembers.forEach(m => {
-    const movieCost = memberMovieCost[m.id] || 0;
-    const snack = partyExpenses[m.id]?.amount || 0;
-    const hasData = movieCost > 0 || snack > 0;
-    if(!hasData) return;
+    // 다른 사람이 담당하는 멤버는 행 숨김
+    if(coveredByPayer[m.id]) return;
 
-    // 지원금: 간식비 payer는 담당 인원 수 × 지원금, 아니면 본인 1명분
+    const snack = partyExpenses[m.id]?.amount || 0;
+    let movieCost = memberMovieCost[m.id] || 0;
+    let effectiveTitles = [...(memberTitles[m.id]||[])];
     let groupCount = 1;
     let managedNames = [];
+
     if(snack > 0){
       const managed = partyExpenses[m.id]?.managedMemberIds || [m.id];
       groupCount = managed.length;
       managedNames = managed.map(id => members.find(x=>x.id===id)?.name).filter(Boolean);
+      // 담당 인원 영화비 합산 + 영화 제목 합산
+      movieCost = managed.reduce((sum, mid) => sum + (memberMovieCost[mid]||0), 0);
+      const allTitles = [];
+      managed.forEach(mid => { (memberTitles[mid]||[]).forEach(t => { if(!allTitles.includes(t)) allTitles.push(t); }); });
+      effectiveTitles = allTitles;
     }
+
+    const hasData = movieCost > 0 || snack > 0;
+    if(!hasData) return;
 
     const subsidy = groupCount * subsidyPer;
     const settle  = subsidy - movieCost - snack;
@@ -1985,7 +2002,7 @@ function renderSettlementDetail(){
     const settleText  = settle === 0 ? '-'
       : settle < 0 ? `초과 -${fmt(Math.abs(settle))}원`
       : `+${fmt(settle)}원`;
-    const titleText = memberTitles[m.id].map(t=>`🎬 ${esc(t)}`).join('<br>') || '-';
+    const titleText = effectiveTitles.map(t=>`🎬 ${esc(t)}`).join('<br>') || '-';
     const namesLabel = managedNames.length > 1
       ? `<br><span style="font-size:10px;color:var(--ink3);font-weight:400">${groupCount}명 담당 (${managedNames.join(', ')})</span>`
       : '';
