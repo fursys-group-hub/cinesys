@@ -519,7 +519,7 @@
     </div>
 
     <div class="panel">
-      <h2><span class="ic">💰</span> 2차 정산</h2>
+      <h2><span class="ic">💰</span> 정산 세부 내역</h2>
       <div class="desc">간식/뒷풀이비 초과액을 각 회원별로 정산합니다.</div>
       <div class="scroll">
         <table class="tbl" id="settlementDetailTbl"></table>
@@ -600,6 +600,11 @@ let membersReady = false;
 function isAdmin(){
   if(!currentUser) return false;
   if(ADMIN_EMAILS.includes(currentUser.email)) return true;
+  const me=members.find(m=>m.email&&m.email.toLowerCase()===currentUser.email.toLowerCase());
+  return !!(me&&(me.role==='총무'||me.role==='회장'));
+}
+function isTreasurerOrChair(){
+  if(!currentUser) return false;
   const me=members.find(m=>m.email&&m.email.toLowerCase()===currentUser.email.toLowerCase());
   return !!(me&&(me.role==='총무'||me.role==='회장'));
 }
@@ -1627,7 +1632,7 @@ function renderFinOverview(){
   } else {
     const treasurer = members.find(m=>m.role==='총무');
     const treasurerName = treasurer ? `<b style="color:var(--sepia)">${esc(treasurer.name)}</b> 총무님` : '총무';
-    callout.innerHTML = `<div class="callout warn"><div class="ct">⚠ 2차 정산 필요</div><div class="cb">초과 <b style="color:var(--burgundy)">${fmt(diff)}원</b> → 뒷풀이 ${partyPpl.length}명이 <b style="color:var(--burgundy)">1인당 ${fmt(shareEach)}원</b>씩 ${treasurerName}에게 입금합니다.</div></div>`;
+    callout.innerHTML = `<div class="callout warn"><div class="ct">⚠ 정산 세부 내역 확인 필요</div><div class="cb">초과 <b style="color:var(--burgundy)">${fmt(diff)}원</b> → 뒷풀이 ${partyPpl.length}명이 <b style="color:var(--burgundy)">1인당 ${fmt(shareEach)}원</b>씩 ${treasurerName}에게 입금합니다.</div></div>`;
   }
 }
 
@@ -1700,16 +1705,14 @@ function renderPartyExpense(){
     totalBox.innerHTML = '';
     return;
   }
-  let h = `<thead><tr><th>이름</th><th>항목</th><th class="admin-only">계좌번호</th><th>사용 금액(원)</th><th>영수증</th><th>정산 완료</th></tr></thead><tbody>`;
+  let h = `<thead><tr><th>이름</th><th>항목</th><th>사용 금액(원)</th><th>영수증</th><th>정산 완료</th></tr></thead><tbody>`;
   party.forEach(m=>{
     const p = partyExp(m.id);
     const isT = isTreasurer(m.id);
-    const acct = [m.bank, m.account].filter(Boolean).join(' ') || '-';
     const recCount = (cur.finance.memberReceipts||{})[m.id]?.filter(r=>!r.settled).length||0;
     h += `<tr data-id="${m.id}">
       <td class="name">${esc(m.name)}</td>
       <td><input type="text" data-act="pe-item" value="${esc(p.item||'')}" placeholder="예) 치킨, 음료" style="width:100%;max-width:150px"${isAdmin()?'':' disabled'}></td>
-      <td class="admin-only" style="font-size:12px;color:var(--ink2)">${esc(acct)}</td>
       <td><input type="number" class="num" data-act="pe-amt" value="${p.amount||''}" placeholder="0"${isAdmin()?'':' disabled'}></td>
       <td style="text-align:center"><button class="btn xs ghost" data-act="upload-receipt" data-member-id="${m.id}" style="padding:4px 8px;">📸 ${recCount}건</button></td>
       <td>${isT
@@ -1880,7 +1883,7 @@ function renderSettlementDetail(){
 
   // 회원별 집계
   const memberData = {};
-  members.forEach(m => { memberData[m.id] = { titles:[], groupCount:0, movieCost:0 }; });
+  members.forEach(m => { memberData[m.id] = { titles:[], groupCount:0, movieCost:0, managedNames:[] }; });
 
   Object.entries(screeningMap).forEach(([key, {memberIds, movieCost}]) => {
     if(!memberIds.length) return;
@@ -1888,16 +1891,24 @@ function renderSettlementDetail(){
     const title = movieTitleMap[movieId] || '';
     const payers = memberIds.filter(id => (cur.finance?.partyExpenses?.[id]?.amount||0) > 0);
     if(payers.length > 0){
-      payers.forEach(pid => {
+      const chunkSize = Math.ceil(memberIds.length / payers.length);
+      payers.forEach((pid, pi) => {
+        const chunk = memberIds.slice(pi * chunkSize, (pi + 1) * chunkSize);
         memberData[pid].titles.push(title);
-        memberData[pid].groupCount += Math.ceil(memberIds.length / payers.length);
+        memberData[pid].groupCount += chunk.length;
         memberData[pid].movieCost  += Math.round(movieCost / payers.length);
+        chunk.forEach(id => {
+          const name = members.find(m=>m.id===id)?.name;
+          if(name) memberData[pid].managedNames.push(name);
+        });
       });
     } else {
-      memberIds.forEach(id => {
+      memberIds.forEach((id, ii) => {
         memberData[id].titles.push(title);
         memberData[id].groupCount += 1;
         memberData[id].movieCost  += Math.round(movieCost / memberIds.length);
+        const name = members.find(m=>m.id===id)?.name;
+        if(name) memberData[id].managedNames.push(name);
       });
     }
   });
@@ -1909,8 +1920,6 @@ function renderSettlementDetail(){
     <th style="text-align:right">영화비</th>
     <th style="text-align:right">간식비</th>
     <th style="text-align:right">정산금</th>
-    <th>은행</th>
-    <th>계좌번호</th>
   </tr></thead><tbody>`;
 
   sortedMembers.forEach(m => {
@@ -1925,15 +1934,16 @@ function renderSettlementDetail(){
       : settle < 0 ? `초과 -${fmt(Math.abs(settle))}원`
       : `+${fmt(settle)}원`;
     const titleText = [...new Set(d.titles)].map(t=>`🎬 ${esc(t)}`).join('<br>') || '-';
+    const namesLabel = d.managedNames.length > 1
+      ? `<br><span style="font-size:10px;color:var(--ink3);font-weight:400">${d.groupCount}명 담당 (${d.managedNames.join(', ')})</span>`
+      : '';
     h += `<tr>
       <td style="font-weight:500">${esc(m.name)}</td>
       <td style="font-size:12px;color:var(--ink3)">${titleText}</td>
-      <td style="text-align:right">${fmt(subsidy)}원${d.groupCount > 1 ? `<br><span style="font-size:10px;color:var(--ink3);font-weight:400">${d.groupCount}명 담당</span>` : ''}</td>
+      <td style="text-align:right">${fmt(subsidy)}원${namesLabel}</td>
       <td style="text-align:right">${d.movieCost > 0 ? fmt(d.movieCost)+'원' : '-'}</td>
       <td style="text-align:right">${snack > 0 ? fmt(snack)+'원' : '-'}</td>
       <td style="text-align:right;font-weight:600;color:${settleColor}">${settleText}</td>
-      <td style="font-size:12px;color:var(--ink3)">${esc(m.bank||'-')}</td>
-      <td style="font-size:12px;color:var(--ink3)">${esc(m.account||'-')}</td>
     </tr>`;
   });
   h += '</tbody>';
@@ -1968,7 +1978,7 @@ function renderResultCards(){
   } else if(party.length===0){
     callout.innerHTML = `<div class="callout warn"><div class="ct">⚠ 뒷풀이 참석자가 없습니다</div><div class="cb">초과액이 ${fmt(diff)}원이지만 뒷풀이 참석자가 없어 정산 대상이 없어요.</div></div>`;
   } else {
-    callout.innerHTML = `<div class="callout warn"><div class="ct">⚠ 추가 정산 필요 (2차 정산)</div><div class="cb">초과액 <b style="color:var(--burgundy)">${fmt(diff)}원</b>을 뒷풀이 참석자 <b>${party.length}명</b>이 나눠 <b style="color:var(--burgundy)">1인당 ${fmt(shareEach)}원</b>씩 총무에게 입금합니다. (총무 본인은 자동 면제)</div></div>`;
+    callout.innerHTML = `<div class="callout warn"><div class="ct">⚠ 추가 정산 필요 (정산 세부 내역 확인)</div><div class="cb">초과액 <b style="color:var(--burgundy)">${fmt(diff)}원</b>을 뒷풀이 참석자 <b>${party.length}명</b>이 나눠 <b style="color:var(--burgundy)">1인당 ${fmt(shareEach)}원</b>씩 총무에게 입금합니다. (총무 본인은 자동 면제)</div></div>`;
   }
 }
 
@@ -1986,7 +1996,7 @@ function renderPartyTable(){
     t.innerHTML = '<tbody><tr><td><div class="empty">초과 지출이 없어 추가 정산이 필요하지 않아요. ✓</div></td></tr></tbody>';
     return;
   }
-  let h = `<thead><tr><th>이름</th><th>등급</th><th>정산액</th><th class="admin-only">은행</th><th class="admin-only">계좌번호</th><th>입금</th></tr></thead><tbody>`;
+  let h = `<thead><tr><th>이름</th><th>등급</th><th>정산액</th><th>입금</th></tr></thead><tbody>`;
   party.forEach(m=>{
     const p = excPay(m.id);
     const isT = isTreasurer(m.id);
@@ -1994,8 +2004,6 @@ function renderPartyTable(){
       <td class="name">${esc(m.name)}</td>
       <td><span class="role-chip ${esc(m.role||'회원')}">${esc(m.role||'회원')}</span></td>
       <td><b style="font-family:'Playfair Display',serif;font-size:16px;color:${isT?'var(--ink3)':'var(--sepia-hi)'}">${fmt(shareEach)}원</b>${isT?' <span style="font-size:11px;color:var(--ink3);margin-left:4px">(본인 면제)</span>':''}</td>
-      <td class="admin-only">${esc(m.bank||'-')}</td>
-      <td class="admin-only">${esc(m.account||'-')}</td>
       <td>${isT?'<span class="pill self">면제</span>':isAdmin()?`<span class="chip ${p.deposited?'on green':''}" data-act="dep">${p.deposited?'입금 O':'미입금'}</span>`:`<span class="pill ${p.deposited?'green':''}" style="opacity:.85">${p.deposited?'입금 O':'미입금'}</span>`}</td>
     </tr>`;
   });
