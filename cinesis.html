@@ -1710,11 +1710,14 @@ function renderPartyExpense(){
     const p = partyExp(m.id);
     const isT = isTreasurer(m.id);
     const recCount = (cur.finance.memberReceipts||{})[m.id]?.filter(r=>!r.settled).length||0;
+    const managed = p.managedMemberIds||[m.id];
+    const mLabel = managed.length > 1 ? `${managed.length}명` : '본인';
+    const manageBtn = isAdmin() ? `<button class="btn xs ghost" data-act="manage-members" style="margin-left:6px;font-size:10px;padding:2px 6px;">${mLabel}</button>` : '';
     h += `<tr data-id="${m.id}">
-      <td class="name">${esc(m.name)}</td>
+      <td class="name">${esc(m.name)}${manageBtn}</td>
       <td><input type="text" data-act="pe-item" value="${esc(p.item||'')}" placeholder="예) 치킨, 음료" style="width:100%;max-width:150px"${isAdmin()?'':' disabled'}></td>
       <td><input type="number" class="num" data-act="pe-amt" value="${p.amount||''}" placeholder="0"${isAdmin()?'':' disabled'}></td>
-      <td style="text-align:center"><button class="btn xs ghost" data-act="upload-receipt" data-member-id="${m.id}" style="padding:4px 8px;">📸 ${recCount}건</button></td>
+      <td><button class="btn xs ghost" data-act="upload-receipt" data-member-id="${m.id}" style="padding:4px 8px;">📸 ${recCount}건</button></td>
       <td>${isT
         ? '<span class="pill self">총무 (면제)</span>'
         : isAdmin()
@@ -1737,6 +1740,7 @@ function renderPartyExpense(){
       const item = tr.querySelector('[data-act=pe-item]'); if(item) item.onchange = e=>{partyExp(id).item=e.target.value.trim();saveMonth();};
       const amt = tr.querySelector('[data-act=pe-amt]'); if(amt) amt.onchange = e=>{partyExp(id).amount=Number(e.target.value)||0;saveMonth();renderFinance();};
       const rb = tr.querySelector('[data-act=pe-rb]'); if(rb) rb.onclick = ()=>{partyExp(id).reimbursed=!partyExp(id).reimbursed;saveMonth();renderPartyExpense();};
+      const mm = tr.querySelector('[data-act=manage-members]'); if(mm) mm.onclick = ()=>openManagedMembersModal(id);
     });
   }
   const partyPpl = partyAttendees();
@@ -1745,6 +1749,26 @@ function renderPartyExpense(){
   const diff = totalSpend - subsidy;
   const shareEach = (diff > 0 && partyPpl.length > 0) ? Math.ceil(diff / partyPpl.length) : 0;
   totalBox.innerHTML = `<div class="cost-total" style="margin-top:10px"><span class="lbl">총 간식/뒷풀이비</span><span class="amount">${fmt(calcPartyTotal())}원</span></div>`;
+}
+
+function openManagedMembersModal(memberId){
+  const m=members.find(x=>x.id===memberId); if(!m) return;
+  const p=partyExp(memberId);
+  const current=p.managedMemberIds||[memberId];
+  const sorted=[...members].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  const rows=sorted.map(mem=>`
+    <label style="display:flex;align-items:center;gap:10px;padding:9px 4px;cursor:pointer;border-bottom:1px solid var(--line);">
+      <input type="checkbox" class="managed-cb" value="${mem.id}" ${current.includes(mem.id)?'checked':''} style="width:15px;height:15px;cursor:pointer;accent-color:var(--sepia);">
+      <span style="font-size:14px">${esc(mem.name)}${mem.id===memberId?' <span style="font-size:11px;color:var(--ink3)">(본인)</span>':''}</span>
+    </label>`).join('');
+  openModal(`${esc(m.name)}님 담당 인원 선택`,
+    `<div style="max-height:50vh;overflow-y:auto;">${rows}</div>`,
+    async()=>{
+      const checked=[...document.querySelectorAll('.managed-cb:checked')].map(cb=>cb.value);
+      if(!checked.length){toast('최소 1명을 선택하세요');return false;}
+      p.managedMemberIds=checked;
+      await saveMonth();renderFinance();toast('담당 인원이 저장되었습니다.');
+    },'저장');
 }
 
 function viewReceiptsForMember(memberId){
@@ -1913,7 +1937,7 @@ function renderSettlementDetail(){
   const movieTitleMap = {};
   (cur.movies||[]).forEach(mv => { movieTitleMap[mv.id] = mv.title; });
 
-  // cur.records로 시간대별 참석자 맵 구성: "movieId|movieTime" -> [memberId, ...]
+  // 시간대별 참석자 맵: "movieId|movieTime" -> {memberIds[], movieCost}
   const screeningMap = {};
   Object.entries(cur.records||{}).forEach(([memberId, rec]) => {
     if(!rec.attending || !rec.movieId) return;
@@ -1921,45 +1945,31 @@ function renderSettlementDetail(){
     if(!screeningMap[key]) screeningMap[key] = {memberIds:[], movieCost:0};
     screeningMap[key].memberIds.push(memberId);
   });
-
-  // movieCosts 배열로 각 시간대 티켓 금액 매핑
   (cur.finance?.movieCosts||[]).forEach(mc => {
     const key = `${mc.movieId}|${mc.movieTime}`;
     if(!screeningMap[key]) screeningMap[key] = {memberIds:[], movieCost:0};
     screeningMap[key].movieCost = mc.amount || 0;
   });
 
-  // 회원별 집계
-  const memberData = {};
-  members.forEach(m => { memberData[m.id] = { titles:[], groupCount:0, movieCost:0, managedNames:[] }; });
-
+  // 회원별 영화비 + 영화제목 집계 (단순 n분의 1)
+  const memberMovieCost = {};
+  const memberTitles = {};
+  members.forEach(m => { memberMovieCost[m.id] = 0; memberTitles[m.id] = []; });
   Object.entries(screeningMap).forEach(([key, {memberIds, movieCost}]) => {
     if(!memberIds.length) return;
     const [movieId] = key.split('|');
     const title = movieTitleMap[movieId] || '';
-    const payers = memberIds.filter(id => (cur.finance?.partyExpenses?.[id]?.amount||0) > 0);
-    if(payers.length > 0){
-      const chunkSize = Math.ceil(memberIds.length / payers.length);
-      payers.forEach((pid, pi) => {
-        const chunk = memberIds.slice(pi * chunkSize, (pi + 1) * chunkSize);
-        memberData[pid].titles.push(title);
-        memberData[pid].groupCount += chunk.length;
-        memberData[pid].movieCost  += Math.round(movieCost / payers.length);
-        chunk.forEach(id => {
-          const name = members.find(m=>m.id===id)?.name;
-          if(name) memberData[pid].managedNames.push(name);
-        });
-      });
-    } else {
-      memberIds.forEach((id, ii) => {
-        memberData[id].titles.push(title);
-        memberData[id].groupCount += 1;
-        memberData[id].movieCost  += Math.round(movieCost / memberIds.length);
-        const name = members.find(m=>m.id===id)?.name;
-        if(name) memberData[id].managedNames.push(name);
-      });
-    }
+    const perPerson = Math.round(movieCost / memberIds.length);
+    memberIds.forEach(id => {
+      if(memberMovieCost[id] !== undefined){
+        memberMovieCost[id] += perPerson;
+        if(title && !memberTitles[id].includes(title)) memberTitles[id].push(title);
+      }
+    });
   });
+
+  // 간식/뒷풀이비 payer별 managedMemberIds 기반 지원금 계산
+  const partyExpenses = cur.finance?.partyExpenses || {};
 
   const sortedMembers = [...members].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
   let h = `<thead><tr>
@@ -1971,25 +1981,35 @@ function renderSettlementDetail(){
   </tr></thead><tbody>`;
 
   sortedMembers.forEach(m => {
-    const d = memberData[m.id];
-    const snack = cur.finance?.partyExpenses?.[m.id]?.amount || 0;
-    const hasData = d.groupCount > 0 || snack > 0;
+    const movieCost = memberMovieCost[m.id] || 0;
+    const snack = partyExpenses[m.id]?.amount || 0;
+    const hasData = movieCost > 0 || snack > 0;
     if(!hasData) return;
-    const subsidy = d.groupCount * subsidyPer;
-    const settle  = subsidy - d.movieCost - snack;
+
+    // 지원금: 간식비 payer는 담당 인원 수 × 지원금, 아니면 본인 1명분
+    let groupCount = 1;
+    let managedNames = [];
+    if(snack > 0){
+      const managed = partyExpenses[m.id]?.managedMemberIds || [m.id];
+      groupCount = managed.length;
+      managedNames = managed.map(id => members.find(x=>x.id===id)?.name).filter(Boolean);
+    }
+
+    const subsidy = groupCount * subsidyPer;
+    const settle  = subsidy - movieCost - snack;
     const settleColor = settle < 0 ? 'var(--burgundy)' : 'var(--sage)';
     const settleText  = settle === 0 ? '-'
       : settle < 0 ? `초과 -${fmt(Math.abs(settle))}원`
       : `+${fmt(settle)}원`;
-    const titleText = [...new Set(d.titles)].map(t=>`🎬 ${esc(t)}`).join('<br>') || '-';
-    const namesLabel = d.managedNames.length > 1
-      ? `<br><span style="font-size:10px;color:var(--ink3);font-weight:400">${d.groupCount}명 담당 (${d.managedNames.join(', ')})</span>`
+    const titleText = memberTitles[m.id].map(t=>`🎬 ${esc(t)}`).join('<br>') || '-';
+    const namesLabel = managedNames.length > 1
+      ? `<br><span style="font-size:10px;color:var(--ink3);font-weight:400">${groupCount}명 담당 (${managedNames.join(', ')})</span>`
       : '';
     h += `<tr>
       <td style="font-weight:500">${esc(m.name)}</td>
       <td style="font-size:12px;color:var(--ink3)">${titleText}</td>
       <td>${fmt(subsidy)}원${namesLabel}</td>
-      <td>${d.movieCost > 0 ? fmt(d.movieCost)+'원' : '-'}</td>
+      <td>${movieCost > 0 ? fmt(movieCost)+'원' : '-'}</td>
       <td>${snack > 0 ? fmt(snack)+'원' : '-'}</td>
       <td style="font-weight:600;color:${settleColor}">${settleText}</td>
     </tr>`;
