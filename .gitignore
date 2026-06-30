@@ -9,6 +9,9 @@ node_modules/
 # 로컬 전용 설정값 (키 보관 — 배포 서버에서는 자동 생성)
 config.js
 
+# 배포 전 검토 내부 작업 파일
+.fursys-deploy-hub/
+
 # OS
 .DS_Store
 Thumbs.db
