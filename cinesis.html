@@ -577,10 +577,13 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<!-- 배포 시 서버 환경값으로 자동 생성되는 설정 파일 (키는 코드에 직접 적지 않음) -->
+<script src="config.js"></script>
 <script>
 /* ── Firebase 연결 ── */
+const CFG = (window.CINESYS_CONFIG || {});
 const firebaseConfig = {
-  apiKey: "AIzaSyDSFvG1GG4HTGSJ14ZlWk-gwUYPdMYWFSQ",
+  apiKey: CFG.FIREBASE_API_KEY || "",
   authDomain: "cinesys-26882.firebaseapp.com",
   databaseURL: "https://cinesys-26882-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "cinesys-26882",
@@ -714,9 +717,9 @@ const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const KEY_MEMBERS='cns-members', KEY_INDEX='cns-month-index', KEY_VER='cns-schema-version';
 const KEY_LIBRARY='cns-library';
 const mKey = id => 'cns-month-'+id;
-const TMDB_KEY='f0450860e75128ce0e1cf31939afef97';
+const TMDB_KEY=CFG.TMDB_KEY||'';
 const TMDB_IMG='https://image.tmdb.org/t/p/w500';
-const KOBIS_KEY='60726c1947f566bdb38945b5c050bb7c';
+const KOBIS_KEY=CFG.KOBIS_KEY||'';
 
 const COMPANIES = ['퍼시스','퍼시스홀딩스','일룸','일룸홀딩스','시디즈','기타'];
 

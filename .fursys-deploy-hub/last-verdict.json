@@ -1,0 +1,16 @@
+{
+  "commit": "c106415d064f3da3d95dc43afbe7f64d14a75664",
+  "tree": "5a588aefcce332631fccde8cb34621588d001fd6",
+  "branch": "main",
+  "security": "pass",
+  "deployable": true,
+  "final": "ok",
+  "report": ".fursys-deploy-hub/security-report-20260630-1621.md",
+  "generated_at": "2026-06-30 16:21",
+  "env_plan": [
+    { "name": "FIREBASE_API_KEY", "class": "locked", "note": "", "scope": "container" },
+    { "name": "TMDB_KEY", "class": "locked", "note": "", "scope": "container" },
+    { "name": "KOBIS_KEY", "class": "locked", "note": "", "scope": "container" }
+  ],
+  "volumes_plan": []
+}

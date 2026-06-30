@@ -1,0 +1,17 @@
+# 배포 이미지에 넣지 않을 것들 (키·문서·프로토타입 등)
+.env
+.env.*
+config.js
+cinesis.html
+archive-preview.html
+font-preview.html
+banner.jpg
+*.md
+.git
+.gitignore
+.gitattributes
+.fursys-deploy-hub
+.claude
+.vscode
+.idea
+node_modules
