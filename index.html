@@ -198,7 +198,9 @@
   .absence-dots{display:inline-flex;gap:5px;align-items:center;}
   .absence-dot{width:11px;height:11px;border-radius:50%;border:1.5px solid var(--line2);background:transparent;transition:.2s;display:inline-block;}
   .absence-dot.filled{background:var(--burgundy);border-color:var(--burgundy);}
-  .absence-flag{font-family:'Montserrat',sans-serif;font-size:10.5px;font-weight:700;color:#fff;background:var(--burgundy);padding:3px 9px;border-radius:3px;letter-spacing:.3px;white-space:nowrap;}
+  .absence-flag{font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:12px;white-space:nowrap;}
+  .absence-flag.nudge{color:#7a5800;background:#fff3cd;border:1px solid #ffe082;}
+  .absence-flag.nudge-warn{color:#7a4500;background:#ffe8cc;border:1px solid #ffcc80;}
   .summary-card.danger{background:linear-gradient(135deg,rgba(139,58,58,.16),rgba(139,58,58,.03));border-color:#d4b8b8;}
   .summary-card.danger .sv{color:var(--burgundy);}
   .summary-card.danger .stripe{background:var(--burgundy);}
@@ -311,10 +313,6 @@
   .month-add-btn{padding:9px 16px;font-size:13px;cursor:pointer;color:var(--sepia-hi);font-weight:600;border-top:1px solid var(--line);background:var(--paper2);display:flex;align-items:center;gap:6px;transition:.12s;}
   .month-add-btn:hover{background:rgba(184,133,79,.12);}
 
-  /* ── 자동 탈퇴 대상 행 ── */
-  .tbl tr.danger-row td{background:rgba(139,58,58,.06);}
-  .tbl tr.danger-row:hover td{background:rgba(139,58,58,.10);}
-  .tbl tr.danger-row .name{color:var(--burgundy);}
 
   /* ─── Pretendard 전체 적용 (배너 제외) ─── */
   .panel h2,.panel h2 .small,
@@ -920,7 +918,8 @@ function renderAbsenceCell(count){
   let h = '<div class="absence-cell"><div class="absence-dots">';
   for(let i=1; i<=3; i++) h += `<span class="absence-dot ${i<=filled?'filled':''}"></span>`;
   h += '</div>';
-  if(count >= 3) h += '<span class="absence-flag">자동 탈퇴 대상</span>';
+  if(count >= 3) h += '<span class="absence-flag nudge">이달엔 꼭 참석해주세요! 🎬</span>';
+  else if(count === 2) h += '<span class="absence-flag nudge-warn">2회 연속 불참 중이에요</span>';
   h += '</div>';
   return h;
 }
@@ -1014,12 +1013,11 @@ function renderActivityTableAdmin(t){
   sorted.forEach(m=>{
     const r=cur.records[m.id]||{attending:null,movieId:null,movieTime:null,seat:'',afterparty:false,ticketGiven:false};
     const absences=consecutiveAbsences(m.id);
-    const isDanger=absences>=3;
     const att=r.attending; // true / false / null(미응답)
     const attClass=att===true?'on':att===false?'':'pending';
     const attText=att===true?'참석 O':att===false?'불참 X':'미응답';
-    h+=`<tr data-id="${m.id}"${isDanger?' class="danger-row"':''}>
-      <td class="name">${isDanger?'<span style="font-size:11px;margin-right:4px;">⚠</span>':''}${esc(m.name)}</td>
+    h+=`<tr data-id="${m.id}">
+      <td class="name">${esc(m.name)}</td>
       <td><span class="chip ${attClass}"${locked?' style="cursor:default"':''} data-act="att">${attText}</span></td>
       <td>${att===true?(()=>{
         if(!cur.movies.length) return '<span style="color:var(--ink3)">상영작 없음</span>';
@@ -1075,15 +1073,14 @@ function renderActivityTableMember(t){
   sorted.forEach(m=>{
     const r=cur.records[m.id]||{attending:null};
     const absences=consecutiveAbsences(m.id);
-    const isDanger=absences>=3;
     const att=r.attending;
     const attClass=att===true?'on':att===false?'':'pending';
     const attText=att===true?'참석 O':att===false?'불참 X':'미응답';
     const mv=att===true?cur.movies.find(mv=>mv.id===r.movieId):null;
     const clickStyle=!locked?'cursor:pointer;':'cursor:default;';
-    h+=`<tr${isDanger?' class="danger-row"':''}>
+    h+=`<tr>
       <td class="name" data-id="${m.id}">
-        ${isDanger?'<span style="font-size:11px;margin-right:4px;">⚠</span>':''}${esc(m.name)}
+        ${esc(m.name)}
       </td>
       <td><span class="chip ${attClass}" style="${clickStyle}" data-id="${m.id}">${attText}</span></td>
       <td style="font-size:13px;color:${mv?'var(--ink)':'var(--ink3)'};">${mv?esc(mv.title)+' <span style="font-family:\'Montserrat\';font-size:11px;">'+esc(r.movieTime||'')+'</span>':'-'}</td>
@@ -1197,7 +1194,6 @@ function updateSummaryCards(){
   const total=Object.values(cur.records).filter(r=>r.attending).length;
   const after=Object.values(cur.records).filter(r=>r.attending&&r.afterparty).length;
   const tickets=Object.values(cur.records).filter(r=>r.attending&&r.ticketGiven).length;
-  const autoLeave = members.filter(m=>consecutiveAbsences(m.id)>=3).length;
   let h=`<div class="summary-card hi" style="grid-column:1/-1"><div class="stripe"></div><div class="sl">총 참석</div><div class="sv">${total}<span class="su">명</span></div></div>`;
   cur.movies.forEach(mv=>{
     const c=Object.values(cur.records).filter(r=>r.attending&&r.movieId===mv.id).length;

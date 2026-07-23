@@ -198,7 +198,9 @@
   .absence-dots{display:inline-flex;gap:5px;align-items:center;}
   .absence-dot{width:11px;height:11px;border-radius:50%;border:1.5px solid var(--line2);background:transparent;transition:.2s;display:inline-block;}
   .absence-dot.filled{background:var(--burgundy);border-color:var(--burgundy);}
-  .absence-flag{font-family:'Montserrat',sans-serif;font-size:10.5px;font-weight:700;color:#fff;background:var(--burgundy);padding:3px 9px;border-radius:3px;letter-spacing:.3px;white-space:nowrap;}
+  .absence-flag{font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:12px;white-space:nowrap;}
+  .absence-flag.nudge{color:#7a5800;background:#fff3cd;border:1px solid #ffe082;}
+  .absence-flag.nudge-warn{color:#7a4500;background:#ffe8cc;border:1px solid #ffcc80;}
   .summary-card.danger{background:linear-gradient(135deg,rgba(139,58,58,.16),rgba(139,58,58,.03));border-color:#d4b8b8;}
   .summary-card.danger .sv{color:var(--burgundy);}
   .summary-card.danger .stripe{background:var(--burgundy);}
@@ -311,10 +313,6 @@
   .month-add-btn{padding:9px 16px;font-size:13px;cursor:pointer;color:var(--sepia-hi);font-weight:600;border-top:1px solid var(--line);background:var(--paper2);display:flex;align-items:center;gap:6px;transition:.12s;}
   .month-add-btn:hover{background:rgba(184,133,79,.12);}
 
-  /* ── 자동 탈퇴 대상 행 ── */
-  .tbl tr.danger-row td{background:rgba(139,58,58,.06);}
-  .tbl tr.danger-row:hover td{background:rgba(139,58,58,.10);}
-  .tbl tr.danger-row .name{color:var(--burgundy);}
 
   /* ─── Pretendard 전체 적용 (배너 제외) ─── */
   .panel h2,.panel h2 .small,
@@ -511,6 +509,9 @@
     <div class="panel">
       <h2><span class="ic">🍻</span> 간식 / 뒷풀이비</h2>
       <div class="desc">참석자 전원이 표시됩니다. 각자 쓴 금액을 입력하고 정산 여부를 체크하세요.</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <button class="btn sm primary" id="uploadReceiptBtn">📸 영수증 업로드</button>
+      </div>
       <div id="receiptsContainer"></div>
       <div class="scroll">
         <table class="tbl" id="partyExpenseTbl"></table>
@@ -682,7 +683,6 @@ function reEvalAuth(){
 auth.onAuthStateChanged(user=>{
   currentUser = user;
   if(!membersReady){
-    // 멤버 데이터 로드 전 — 게스트 뷰 유지, init() 완료 후 재평가
     updateAuthArea();
     return;
   }
@@ -918,7 +918,8 @@ function renderAbsenceCell(count){
   let h = '<div class="absence-cell"><div class="absence-dots">';
   for(let i=1; i<=3; i++) h += `<span class="absence-dot ${i<=filled?'filled':''}"></span>`;
   h += '</div>';
-  if(count >= 3) h += '<span class="absence-flag">자동 탈퇴 대상</span>';
+  if(count >= 3) h += '<span class="absence-flag nudge">이달엔 꼭 참석해주세요! 🎬</span>';
+  else if(count === 2) h += '<span class="absence-flag nudge-warn">2회 연속 불참 중이에요</span>';
   h += '</div>';
   return h;
 }
@@ -1012,12 +1013,11 @@ function renderActivityTableAdmin(t){
   sorted.forEach(m=>{
     const r=cur.records[m.id]||{attending:null,movieId:null,movieTime:null,seat:'',afterparty:false,ticketGiven:false};
     const absences=consecutiveAbsences(m.id);
-    const isDanger=absences>=3;
     const att=r.attending; // true / false / null(미응답)
     const attClass=att===true?'on':att===false?'':'pending';
     const attText=att===true?'참석 O':att===false?'불참 X':'미응답';
-    h+=`<tr data-id="${m.id}"${isDanger?' class="danger-row"':''}>
-      <td class="name">${isDanger?'<span style="font-size:11px;margin-right:4px;">⚠</span>':''}${esc(m.name)}</td>
+    h+=`<tr data-id="${m.id}">
+      <td class="name">${esc(m.name)}</td>
       <td><span class="chip ${attClass}"${locked?' style="cursor:default"':''} data-act="att">${attText}</span></td>
       <td>${att===true?(()=>{
         if(!cur.movies.length) return '<span style="color:var(--ink3)">상영작 없음</span>';
@@ -1073,15 +1073,14 @@ function renderActivityTableMember(t){
   sorted.forEach(m=>{
     const r=cur.records[m.id]||{attending:null};
     const absences=consecutiveAbsences(m.id);
-    const isDanger=absences>=3;
     const att=r.attending;
     const attClass=att===true?'on':att===false?'':'pending';
     const attText=att===true?'참석 O':att===false?'불참 X':'미응답';
     const mv=att===true?cur.movies.find(mv=>mv.id===r.movieId):null;
     const clickStyle=!locked?'cursor:pointer;':'cursor:default;';
-    h+=`<tr${isDanger?' class="danger-row"':''}>
+    h+=`<tr>
       <td class="name" data-id="${m.id}">
-        ${isDanger?'<span style="font-size:11px;margin-right:4px;">⚠</span>':''}${esc(m.name)}
+        ${esc(m.name)}
       </td>
       <td><span class="chip ${attClass}" style="${clickStyle}" data-id="${m.id}">${attText}</span></td>
       <td style="font-size:13px;color:${mv?'var(--ink)':'var(--ink3)'};">${mv?esc(mv.title)+' <span style="font-family:\'Montserrat\';font-size:11px;">'+esc(r.movieTime||'')+'</span>':'-'}</td>
@@ -1106,12 +1105,10 @@ function openAttendancePopup(memberId){
   const lbl='font-family:\'Montserrat\';font-size:10.5px;color:var(--ink3);text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:8px;';
   const radioLbl='display:flex;align-items:center;gap:7px;cursor:pointer;font-size:14px;';
 
-  // 영화 라디오 버튼
   const movieRadios=cur.movies.length
     ? cur.movies.map(mv=>`<label style="${radioLbl}padding:3px 0"><input type="radio" name="popmovie" value="${mv.id}" ${mv.id===r.movieId?'checked':''}> ${esc(mv.title)}</label>`).join('')
     : '<span style="color:var(--ink3);font-size:13px">등록된 상영작이 없습니다</span>';
 
-  // 초기 선택 영화의 시간 옵션
   const initMv=cur.movies.find(mv=>mv.id===r.movieId);
   const initTimeHtml=(initMv&&(initMv.times||[]).length)
     ? (initMv.times||[]).map(t=>`<label style="${radioLbl}padding:3px 0"><input type="radio" name="poptime" value="${t}" ${t===r.movieTime?'checked':''}> ${t}</label>`).join('')
@@ -1166,7 +1163,6 @@ function openAttendancePopup(memberId){
   },'저장');
 
   setTimeout(()=>{
-    // 참석 여부 변경 시 영화/시간/좌석/뒷풀이 섹션 표시/숨김
     document.querySelectorAll('input[name=att]').forEach(radio=>{
       radio.onchange=()=>{
         const show=document.querySelector('input[name=att]:checked')?.value==='yes';
@@ -1176,7 +1172,6 @@ function openAttendancePopup(memberId){
         if(!show) document.getElementById('popTimeWrap').style.display='none';
       };
     });
-    // 영화 선택 시 시간 옵션 동적 업데이트
     document.querySelectorAll('input[name=popmovie]').forEach(radio=>{
       radio.onchange=()=>{
         const mv=cur.movies.find(m=>m.id===radio.value);
@@ -1199,7 +1194,6 @@ function updateSummaryCards(){
   const total=Object.values(cur.records).filter(r=>r.attending).length;
   const after=Object.values(cur.records).filter(r=>r.attending&&r.afterparty).length;
   const tickets=Object.values(cur.records).filter(r=>r.attending&&r.ticketGiven).length;
-  const autoLeave = members.filter(m=>consecutiveAbsences(m.id)>=3).length;
   let h=`<div class="summary-card hi" style="grid-column:1/-1"><div class="stripe"></div><div class="sl">총 참석</div><div class="sv">${total}<span class="su">명</span></div></div>`;
   cur.movies.forEach(mv=>{
     const c=Object.values(cur.records).filter(r=>r.attending&&r.movieId===mv.id).length;
@@ -1222,9 +1216,9 @@ function equalizeTopPanels(){
 /* ============== 활동일 / 날짜 투표 ============== */
 function getLastWednesday(monthId){
   const [y,m]=monthId.split('-').map(Number);
-  const last=new Date(y,m,0); // 해당 월의 마지막 날
-  const dow=last.getDay(); // 0=일,3=수
-  last.setDate(last.getDate()-((dow+4)%7)); // 마지막 수요일로
+  const last=new Date(y,m,0);
+  const dow=last.getDay();
+  last.setDate(last.getDate()-((dow+4)%7));
   return last;
 }
 function formatDateKo(d){
@@ -1232,11 +1226,6 @@ function formatDateKo(d){
   const dt=d instanceof Date?d:new Date(d+'T00:00:00');
   const days=['일','월','화','수','목','금','토'];
   return `${dt.getMonth()+1}월 ${dt.getDate()}일 (${days[dt.getDay()]})`;
-}
-function formatDateVal(d){
-  if(!d) return '';
-  const dt=d instanceof Date?d:new Date(d+'T00:00:00');
-  return dt.toISOString().slice(0,10);
 }
 
 function renderActivityDateBanner(){
@@ -1246,33 +1235,25 @@ function renderActivityDateBanner(){
   const confirmed=dv?.confirmed||null;
   const open=dv?.open||false;
   const totalVotes=dv?Object.keys(dv.votes||{}).length:0;
-
   let cls='activity-date-banner';
   let icon='📅';
   let label='이달의 활동일';
   let dateText='';
   let sub='';
   let adminBtns='';
-
   if(confirmed){
-    cls+=' confirmed';
-    icon='✅';
-    dateText=formatDateKo(confirmed);
-    sub='투표로 확정';
+    cls+=' confirmed';icon='✅';
+    dateText=formatDateKo(confirmed);sub='투표로 확정';
     if(isAdmin()) adminBtns=`<button class="btn sm ghost" id="adbResetBtn" style="font-size:11px;padding:3px 8px;">초기화</button>`;
   } else if(open){
-    cls+=' vote-open';
-    icon='🗳️';
-    dateText=`투표 진행 중`;
-    sub=`${totalVotes}명 참여`;
+    cls+=' vote-open';icon='🗳️';
+    dateText=`투표 진행 중`;sub=`${totalVotes}명 참여`;
     if(isAdmin()) adminBtns=`<button class="btn sm primary" id="adbCloseBtn" style="font-size:11px;padding:3px 10px;">투표 마감</button>`;
   } else {
     const lw=getLastWednesday(curId);
-    dateText=formatDateKo(lw);
-    sub=lw>new Date()?'마지막 수요일 예정':'마지막 수요일';
+    dateText=formatDateKo(lw);sub=lw>new Date()?'마지막 수요일 예정':'마지막 수요일';
     if(isAdmin()) adminBtns=`<button class="btn sm ghost" id="adbOpenBtn" style="font-size:11px;padding:3px 8px;">날짜 투표 열기</button>`;
   }
-
   el.innerHTML=`<div class="${cls}">
     <span class="adb-icon">${icon}</span>
     <span class="adb-label">${label}</span>
@@ -1280,7 +1261,6 @@ function renderActivityDateBanner(){
     ${sub?`<span class="adb-sub">· ${sub}</span>`:''}
     ${adminBtns?`<div class="adb-actions">${adminBtns}</div>`:''}
   </div>`;
-
   const openBtn=document.getElementById('adbOpenBtn');
   if(openBtn) openBtn.onclick=openDateVoteSetup;
   const closeBtn=document.getElementById('adbCloseBtn');
@@ -1295,16 +1275,11 @@ function renderVoteSection(){
   const dv=cur?.dateVote;
   if(!dv||!dv.open||dv.confirmed){container.style.display='none';return;}
   container.style.display='';
-
   const votes=dv.votes||{};
-  // 옵션별 투표 집계
   const tally={};
   dv.options.forEach(o=>tally[o]=[]);
-  Object.entries(votes).forEach(([mid,opt])=>{
-    if(tally[opt]) tally[opt].push(mid);
-  });
+  Object.entries(votes).forEach(([mid,opt])=>{if(tally[opt])tally[opt].push(mid);});
   const maxCount=Math.max(...Object.values(tally).map(v=>v.length),0);
-
   const optHtml=dv.options.map(opt=>{
     const voters=tally[opt]||[];
     const names=voters.map(mid=>{const m=members.find(x=>x.id===mid);return m?m.name:'?';});
@@ -1315,14 +1290,11 @@ function renderVoteSection(){
       ${names.length?`<div class="vote-opt-names">${esc(names.join(', '))}</div>`:''}
     </div>`;
   }).join('');
-
-  // 멤버 칩
   const memberChips=members.map(m=>{
     const myVote=votes[m.id];
     const cls=myVote?'vote-member-chip voted':'vote-member-chip no-vote';
     return `<div class="${cls}" data-mid="${esc(m.id)}" title="${myVote?formatDateKo(myVote):'미투표'}">${esc(m.name)}</div>`;
   }).join('');
-
   container.innerHTML=`<div class="vote-section">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
       <h3 style="margin:0;font-size:14px;">🗳️ 활동일 투표</h3>
@@ -1332,7 +1304,6 @@ function renderVoteSection(){
     <div style="font-size:11px;font-weight:600;color:var(--ink3);margin-bottom:6px;font-family:'Montserrat',sans-serif;letter-spacing:.05em;">멤버 투표 현황</div>
     <div class="vote-member-list">${memberChips}</div>
   </div>`;
-
   container.querySelectorAll('.vote-member-chip').forEach(chip=>{
     chip.onclick=()=>openMemberVoteModal(chip.dataset.mid);
   });
@@ -1350,15 +1321,10 @@ function openDateVoteSetup(){
     <div style="font-size:12px;color:var(--ink3);margin-top:12px">후보를 입력하면 멤버들이 투표할 수 있어요.</div>`;
   openModal('날짜 투표 열기', body, async()=>{
     const opts=[];
-    for(let i=0;i<count;i++){
-      const v=document.getElementById(`voteOpt${i}`)?.value;
-      if(v) opts.push(v);
-    }
+    for(let i=0;i<count;i++){const v=document.getElementById(`voteOpt${i}`)?.value;if(v)opts.push(v);}
     if(opts.length<2){toast('후보를 2개 이상 입력해주세요');return false;}
     cur.dateVote={open:true,options:opts,votes:{},confirmed:null};
-    await saveMonth();
-    renderActivityDateBanner();
-    renderVoteSection();
+    await saveMonth();renderActivityDateBanner();renderVoteSection();
     toast('투표가 시작됐습니다!');
   },'투표 시작');
   setTimeout(()=>{
@@ -1381,8 +1347,7 @@ async function closeDateVote(){
   const winner=Object.entries(tally).sort((a,b)=>b[1]-a[1])[0];
   if(!winner||winner[1]===0){
     if(!confirm('아직 투표자가 없어요. 그래도 마감할까요?')) return;
-    cur.dateVote.open=false;
-    cur.dateVote.confirmed=null;
+    cur.dateVote.open=false;cur.dateVote.confirmed=null;
   } else {
     const tied=Object.entries(tally).filter(([,c])=>c===winner[1]);
     let finalDate=winner[0];
@@ -1391,21 +1356,16 @@ async function closeDateVote(){
       if(!confirm(`${names} 동률이에요. 첫 번째 후보(${formatDateKo(tied[0][0])})로 확정할까요?`)) return;
       finalDate=tied[0][0];
     }
-    cur.dateVote.open=false;
-    cur.dateVote.confirmed=finalDate;
+    cur.dateVote.open=false;cur.dateVote.confirmed=finalDate;
   }
-  await saveMonth();
-  renderActivityDateBanner();
-  renderVoteSection();
+  await saveMonth();renderActivityDateBanner();renderVoteSection();
   toast(cur.dateVote.confirmed?`${formatDateKo(cur.dateVote.confirmed)}로 확정됐습니다!`:'투표가 마감됐습니다.');
 }
 
 async function resetDateVote(){
   if(!confirm('날짜 투표 결과를 초기화할까요?')) return;
   cur.dateVote=null;
-  await saveMonth();
-  renderActivityDateBanner();
-  renderVoteSection();
+  await saveMonth();renderActivityDateBanner();renderVoteSection();
   toast('초기화됐습니다.');
 }
 
@@ -1424,9 +1384,7 @@ function openMemberVoteModal(memberId){
     if(!sel){toast('날짜를 선택해주세요');return false;}
     if(!cur.dateVote.votes) cur.dateVote.votes={};
     cur.dateVote.votes[memberId]=sel.value;
-    await saveMonth();
-    renderActivityDateBanner();
-    renderVoteSection();
+    await saveMonth();renderActivityDateBanner();renderVoteSection();
     toast('투표 완료!');
   },'투표하기');
 }
@@ -1576,6 +1534,10 @@ function renderFinance(){
   renderSettlementDetail();
   renderEpVoucher();
 
+  setTimeout(()=>{
+    const uploadBtn = document.getElementById('uploadReceiptBtn');
+    if(uploadBtn && currentUser) uploadBtn.onclick = uploadReceiptModal;
+  }, 50);
 }
 
 function renderEpVoucher(){
@@ -2505,7 +2467,6 @@ function autoAddToLibrary(movieId){
   if(!movieId||!curId) return;
   const mv=(cur.movies||[]).find(m=>m.id===movieId);
   if(!mv||!mv.title) return;
-  // 같은 월+제목이 이미 있으면 스킵
   if(library.some(e=>e.watchedMonth===curId&&e.title===mv.title)) return;
   const entry={
     id:uid(), title:mv.title, originalTitle:'', year:curId.slice(0,4),
