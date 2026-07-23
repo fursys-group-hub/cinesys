@@ -716,6 +716,8 @@ let library = [];
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const KEY_MEMBERS='cns-members', KEY_INDEX='cns-month-index', KEY_VER='cns-schema-version';
 const KEY_LIBRARY='cns-library';
+const KEY_MEMBER_MIGR='cns-member-migr-ver';
+const MEMBER_MIGR_VER=1;
 const mKey = id => 'cns-month-'+id;
 const TMDB_KEY=CFG.TMDB_KEY||'';
 const TMDB_IMG='https://image.tmdb.org/t/p/w500';
@@ -726,21 +728,21 @@ const COMPANIES = ['퍼시스','퍼시스홀딩스','일룸','일룸홀딩스','
 /* ============== Seed ============== */
 function seedMembers(){
   const data = [
-    {name:'전용하', company:'퍼시스홀딩스', team:'IT인프라팀', joinDate:'2022-03-01', role:'회원'},
+    {name:'전용하', company:'일룸홀딩스', team:'팩토리인텐리전스팀', joinDate:'2022-03-01', role:'회원'},
     {name:'강지은', company:'퍼시스', team:'브랜드역량강화팀', joinDate:'2022-03-01', otherClubs:'오르밍', role:'회원'},
-    {name:'정준용', company:'퍼시스', team:'오피스개발팀', joinDate:'2022-03-01', bank:'신한', account:'110-326-955955', role:'회원'},
+    {name:'정준용', company:'퍼시스', team:'포트폴리오구축개발팀', joinDate:'2022-03-01', bank:'신한', account:'110-326-955955', role:'회원'},
     {name:'박진원', company:'일룸', team:'데스커디자인팀', joinDate:'2023-05-01', role:'회원'},
-    {name:'박세연', company:'퍼시스', team:'다국가사업팀', joinDate:'2023-05-15', bank:'신한', account:'110-446-619418', role:'회원'},
+    {name:'박세연', company:'시디즈', team:'AMERICA 사업개발팀', joinDate:'2023-05-15', bank:'신한', account:'110-446-619418', role:'회원'},
     {name:'정수현', company:'퍼시스', team:'포트폴리오구축개발팀', joinDate:'2023-07-24', role:'회장'},
     {name:'최세령', company:'퍼시스', team:'디지털플랫폼팀', joinDate:'2023-07-24', otherClubs:'일룸도블룸', role:'총무'},
-    {name:'박수연', company:'퍼시스홀딩스', team:'IT인프라팀', joinDate:'2024-03-21', otherClubs:'브루시스', role:'회원'},
-    {name:'정주영', company:'퍼시스홀딩스', team:'SCM기획팀', joinDate:'2024-07-02', otherClubs:'풋시스', bank:'새마을금고', account:'9003271233348', role:'회원'},
+    {name:'박수연', company:'일룸홀딩스', team:'프레임워크운영팀', joinDate:'2024-03-21', otherClubs:'브루시스', role:'회원'},
+    {name:'정주영', company:'퍼시스', team:'퍼시스SCM팀', joinDate:'2024-07-02', otherClubs:'풋시스', bank:'새마을금고', account:'9003271233348', role:'회원'},
     {name:'구본국', company:'퍼시스', team:'제품응용개발팀', joinDate:'2024-11-06', role:'회원'},
     {name:'최시원', company:'시디즈', team:'알로소 브랜드경험디자인팀', joinDate:'2025-02-27', role:'회원'},
     {name:'이성근', company:'퍼시스', team:'포트폴리오구축개발팀', joinDate:'2025-04-30', role:'회원'},
-    {name:'김수진', company:'퍼시스', team:'브랜드경험디자인팀', joinDate:'2025-05-28', role:'회원'},
+    {name:'김수진', company:'일룸홀딩스', team:'BX팀', joinDate:'2025-05-28', role:'회원'},
     {name:'최민규', company:'퍼시스', team:'제품응용개발팀', joinDate:'2025-05-29', role:'회원'},
-    {name:'김아름', company:'퍼시스홀딩스', team:'SCM솔루션기획', joinDate:'2025-12-23', bank:'신한', account:'110-437-964936', role:'회원'},
+    {name:'김아름', company:'일룸홀딩스', team:'SCM솔루션기획', joinDate:'2025-12-23', bank:'신한', account:'110-437-964936', role:'회원'},
   ];
   return data.map(d=>Object.assign({id:uid(),bank:'',account:'',leaveDate:'',otherClubs:''}, d));
 }
@@ -845,9 +847,26 @@ async function init(){
     members = seedMembers();
     await sSet(KEY_MEMBERS, members);
     await sSet(KEY_VER, SCHEMA_VERSION);
+    await sSet(KEY_MEMBER_MIGR, MEMBER_MIGR_VER);
     // 옛 달 데이터가 있으면 유지하되 finance 마이그레이션
   } else {
     members.forEach(migrateMember);
+    // 소속·팀 정정 마이그레이션 (2026-07 구글시트 기준)
+    const migrVer = await sGet(KEY_MEMBER_MIGR, 0);
+    if(migrVer < MEMBER_MIGR_VER){
+      const fixes = {
+        '전용하': {company:'일룸홀딩스', team:'팩토리인텐리전스팀'},
+        '정준용': {company:'퍼시스',     team:'포트폴리오구축개발팀'},
+        '박세연': {company:'시디즈',     team:'AMERICA 사업개발팀'},
+        '박수연': {company:'일룸홀딩스', team:'프레임워크운영팀'},
+        '정주영': {company:'퍼시스',     team:'퍼시스SCM팀'},
+        '김수진': {company:'일룸홀딩스', team:'BX팀'},
+        '김아름': {company:'일룸홀딩스', team:'SCM솔루션기획'},
+      };
+      members.forEach(m=>{ if(fixes[m.name]) Object.assign(m, fixes[m.name]); });
+      await sSet(KEY_MEMBERS, members);
+      await sSet(KEY_MEMBER_MIGR, MEMBER_MIGR_VER);
+    }
   }
 
   if(!monthIndex || !monthIndex.length){
