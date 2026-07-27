@@ -702,8 +702,8 @@ async function sGet(key, fallback){
 }
 async function sSet(key, val){
   memStore[key]=val;
-  try{ await db.ref('cinesys/' + key).set(JSON.stringify(val)); }
-  catch(e){ console.error('save fail',e); toast('저장 실패 - 다시 시도해주세요'); }
+  try{ await db.ref('cinesys/' + key).set(JSON.stringify(val)); return true; }
+  catch(e){ console.error('save fail',e); toast('❌ 저장 실패 — 네트워크를 확인하고 다시 시도해주세요'); return false; }
 }
 
 let members = [];
@@ -897,7 +897,7 @@ async function loadMonth(id){
   buildMonthSelect();
   renderAll();
 }
-async function saveMonth(){ if(cur){ monthCache[curId]=cur; await sSet(mKey(curId), cur); } }
+async function saveMonth(){ if(cur){ monthCache[curId]=cur; return await sSet(mKey(curId), cur); } return false; }
 async function saveMembers(){ await sSet(KEY_MEMBERS, members); }
 async function saveIndex(){ await sSet(KEY_INDEX, monthIndex); }
 
@@ -1164,21 +1164,23 @@ function openAttendancePopup(memberId){
   </div>`;
 
   openModal(`${esc(m.name)}님 참석 정보`,body,async()=>{
-    const v=document.querySelector('input[name=att]:checked')?.value;
+    const box=document.getElementById('modalBox');
+    const v=box?.querySelector('input[name=att]:checked')?.value;
     const attending=v==='yes'?true:v==='no'?false:null;
     const r=rec(memberId);
     r.attending=attending;
     if(attending===true){
-      r.movieId=document.querySelector('input[name=popmovie]:checked')?.value||null;
-      r.movieTime=document.querySelector('input[name=poptime]:checked')?.value||null;
-      r.seat=document.getElementById('popSeat')?.value.trim()||'';
-      r.afterparty=document.querySelector('input[name=party]:checked')?.value==='yes';
+      r.movieId=box?.querySelector('input[name=popmovie]:checked')?.value||null;
+      r.movieTime=box?.querySelector('input[name=poptime]:checked')?.value||null;
+      r.seat=box?.querySelector('#popSeat')?.value.trim()||'';
+      r.afterparty=box?.querySelector('input[name=party]:checked')?.value==='yes';
     } else {
       r.movieId=null;r.movieTime=null;r.seat='';r.afterparty=false;r.ticketGiven=false;
     }
     if(attending===true&&r.movieId) autoAddToLibrary(r.movieId);
-    await saveMonth();renderActivity();updateSummaryCards();renderFinance();
-    toast('저장되었습니다 ✓');
+    const ok=await saveMonth();
+    renderActivity();updateSummaryCards();renderFinance();
+    if(ok) toast('저장되었습니다 ✓');
   },'저장');
 
   setTimeout(()=>{
