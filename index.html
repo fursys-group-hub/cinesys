@@ -1010,8 +1010,8 @@ function renderMovies(){
   cur.movies.forEach(mv=>{
     const times=(mv.times||[mv.time||'']).filter(Boolean);
     const d=document.createElement('div'); d.className='moviecard';
-    d.innerHTML=`<button class="x admin-only" title="삭제">✕</button>
-      <button class="e admin-only" title="수정">✎</button>
+    d.innerHTML=`<button class="x" title="삭제">✕</button>
+      <button class="e" title="수정">✎</button>
       <div class="mt">${esc(mv.title)}</div>
       <div class="moviecard-times">${times.map(t=>`<span class="time-chip">${esc(t)}</span>`).join('')}</div>`;
     d.querySelector('.x').onclick=()=>deleteMovie(mv.id);
