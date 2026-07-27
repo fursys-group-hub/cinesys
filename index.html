@@ -638,7 +638,9 @@ function updateAuthArea(){
     const admin = isAdmin();
     area.innerHTML = `
       <span class="auth-badge ${admin?'admin':'guest'}">${admin?'🔑 관리자':'👤 '+esc(currentUser.displayName||currentUser.email)}</span>
+      ${admin?`<button class="btn sm ghost" onclick="openNotifPanel()" title="회원 응답 알림" style="position:relative;font-size:13px;padding:4px 8px;">🔔<span id="notifBadge" style="display:none;position:absolute;top:-5px;right:-5px;background:var(--burgundy);color:#fff;font-size:9.5px;font-weight:700;min-width:15px;height:15px;line-height:15px;text-align:center;border-radius:8px;padding:0 3px;"></span></button>`:''}
       <button class="btn sm ghost" onclick="authSignOut()" style="font-size:11px;padding:4px 9px;">로그아웃</button>`;
+    if(admin){ watchNotifications(); updateNotifBadge(); }
   } else {
     area.innerHTML = `<button class="btn sm" onclick="authSignIn()" style="font-size:12px;padding:5px 11px;">🔑 로그인</button>`;
   }
@@ -648,6 +650,78 @@ function authSignIn(){
   auth.signInWithPopup(provider).catch(e=>toast('로그인 실패: '+e.message));
 }
 function authSignOut(){ auth.signOut(); }
+
+/* ── 알림 (회원 응답 → 관리자) ── */
+const NOTIF_PATH='cinesys/cns-notif';
+let notifList=[], notifWatching=false, slackWebhook='';
+
+function notifSeenTs(){ return Number(localStorage.getItem('cns-notif-seen')||0); }
+function notifUnreadCount(){ const seen=notifSeenTs(); return notifList.filter(n=>(n.ts||0)>seen).length; }
+
+function watchNotifications(){
+  if(notifWatching || !isAdmin()) return;
+  notifWatching=true;
+  db.ref(NOTIF_PATH).limitToLast(30).on('value', snap=>{
+    const v=snap.val()||{};
+    notifList=Object.entries(v).map(([k,n])=>({key:k,...n})).sort((a,b)=>(b.ts||0)-(a.ts||0));
+    updateNotifBadge();
+  });
+}
+function updateNotifBadge(){
+  const b=document.getElementById('notifBadge'); if(!b) return;
+  const c=notifUnreadCount();
+  b.style.display=c?'':'none'; b.textContent=c>9?'9+':c;
+}
+
+function recordSummary(r){
+  if(r.attending!==true) return {att:r.attending===false?'불참 X':'미정', movie:'', time:'', party:''};
+  const mv=cur.movies.find(x=>x.id===r.movieId);
+  return {att:'참석 O', movie:mv?mv.title:'-', time:r.movieTime||'-', party:r.afterparty?'참석':'불참'};
+}
+function notifyRecordSubmit(m,r){
+  try{
+    if(isAdmin()) return; // 관리자 본인의 수정은 알림 제외
+    const s=recordSummary(r);
+    db.ref(NOTIF_PATH).push({ts:firebase.database.ServerValue.TIMESTAMP, monthId:curId, name:m.name, att:s.att, movie:s.movie, time:s.time, party:s.party});
+    if(slackWebhook){
+      const text=`🎬 [씨네시스 ${curId}] ${m.name} — ${s.att}`+(r.attending===true?` · ${s.movie} ${s.time} · 뒷풀이 ${s.party}`:'');
+      fetch(slackWebhook,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify({text})}).catch(()=>{});
+    }
+  }catch(e){ console.error('notify fail',e); }
+}
+
+function openNotifPanel(){
+  const rows=notifList.length?notifList.map(n=>{
+    const d=n.ts?new Date(n.ts):null;
+    const when=d?`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`:'-';
+    const attColor=n.att==='참석 O'?'var(--sage)':n.att==='불참 X'?'var(--burgundy)':'var(--ink3)';
+    const detail=n.att==='참석 O'?` · ${esc(n.movie)} <b style="font-family:'Montserrat';font-size:12px;">${esc(n.time)}</b> · 뒷풀이 ${esc(n.party)}`:'';
+    return `<div style="padding:9px 2px;border-bottom:1px solid var(--line);">
+      <div style="font-size:13.5px;"><b>${esc(n.name)}</b> <span style="color:${attColor};font-weight:600;">${esc(n.att)}</span>${detail}</div>
+      <div style="font-size:11px;color:var(--ink3);margin-top:2px;">${when}${n.monthId?' · '+esc(n.monthId):''}</div>
+    </div>`;
+  }).join(''):'<div class="empty">아직 알림이 없습니다.<br>회원이 참석·영화·뒷풀이를 저장하면 여기에 표시됩니다.</div>';
+  openModal('🔔 회원 응답 알림',
+    `<div style="max-height:340px;overflow-y:auto;margin-bottom:6px;">${rows}</div>
+     <button class="btn sm ghost" onclick="openSlackSettings()" style="font-size:11.5px;">⚙ 슬랙 알림 연동${slackWebhook?' (연동됨 ✓)':''}</button>`,
+    ()=>{}, '확인');
+  if(notifList[0]&&notifList[0].ts) localStorage.setItem('cns-notif-seen', String(notifList[0].ts));
+  updateNotifBadge();
+}
+function openSlackSettings(){
+  openModal('슬랙 알림 연동',
+    `<p style="font-size:13px;color:var(--ink2);line-height:1.7;margin-bottom:12px;">
+       슬랙 <b>Incoming Webhook URL</b>을 등록하면 회원이 참석 정보를 저장할 때마다 슬랙 채널로 알림이 갑니다.<br>
+       <a href="https://api.slack.com/messaging/webhooks" target="_blank" rel="noopener noreferrer" style="color:var(--sepia);">웹훅 만들기 가이드 →</a></p>
+     <div class="field"><label>Webhook URL</label><input id="slackUrl" type="text" placeholder="https://hooks.slack.com/services/..." value="${esc(slackWebhook||'')}"></div>
+     <p style="font-size:11px;color:var(--ink3);margin-top:8px;">비워두고 저장하면 슬랙 알림이 꺼집니다. (사이트 내 🔔 알림은 계속 작동)</p>`,
+    async()=>{
+      const url=document.getElementById('slackUrl').value.trim();
+      if(url && !url.startsWith('https://hooks.slack.com/')){toast('올바른 슬랙 웹훅 URL이 아닙니다');return false;}
+      slackWebhook=url; await sSet(KEY_SLACK,url);
+      toast(url?'슬랙 연동이 저장되었습니다 ✓':'슬랙 알림이 해제되었습니다');
+    },'저장','primary');
+}
 
 function reEvalAuth(){
   if(!currentUser){
@@ -719,6 +793,7 @@ let library = [];
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const KEY_MEMBERS='cns-members', KEY_INDEX='cns-month-index', KEY_VER='cns-schema-version';
 const KEY_LIBRARY='cns-library';
+const KEY_SLACK='cns-slack-webhook';
 const KEY_MEMBER_MIGR='cns-member-migr-ver';
 const MEMBER_MIGR_VER=1;
 const mKey = id => 'cns-month-'+id;
@@ -838,6 +913,19 @@ function migrateFinance(f){
   delete f.subsidy; delete f.movie; delete f.snack; delete f.snackCost; delete f.payments;
   return f;
 }
+/* 상영 시간을 쉼표 대신 마침표로 구분 입력했던 시기의 기록 교정:
+   record.movieTime이 현재 상영시간 목록에 없는 "16:50(소파). 17:40(소파)" 꼴이면 첫 시간으로 되돌림 */
+function fixCombinedTimes(mo){
+  if(!mo || !mo.records || !mo.movies) return;
+  Object.values(mo.records).forEach(r=>{
+    if(!r.movieId || !r.movieTime) return;
+    const mv=mo.movies.find(m=>m.id===r.movieId);
+    if(!mv || !(mv.times||[]).length) return;
+    if(mv.times.includes(r.movieTime)) return;
+    const first=r.movieTime.split(/\.\s+/)[0].trim();
+    if(first && mv.times.includes(first)) r.movieTime=first;
+  });
+}
 
 /* ============== Init ============== */
 async function init(){
@@ -882,9 +970,10 @@ async function init(){
   // Load all months into cache
   for(const id of monthIndex){
     let mo = await sGet(mKey(id), null);
-    if(mo){ mo.finance = migrateFinance(mo.finance); if(mo.confirmed===undefined) mo.confirmed=false; if(!mo.prevMonthExclusions) mo.prevMonthExclusions=[]; if(!mo.revealed) mo.revealed={}; if(mo.movies) mo.movies.forEach(mv=>{if(!mv.times) mv.times=mv.time?[mv.time]:[]; }); if(mo.records) Object.values(mo.records).forEach(r=>{if(r.movieTime===undefined) r.movieTime=null;}); monthCache[id]=mo; }
+    if(mo){ mo.finance = migrateFinance(mo.finance); if(mo.confirmed===undefined) mo.confirmed=false; if(!mo.prevMonthExclusions) mo.prevMonthExclusions=[]; if(!mo.revealed) mo.revealed={}; if(mo.movies) mo.movies.forEach(mv=>{if(!mv.times) mv.times=mv.time?[mv.time]:[]; }); if(mo.records) Object.values(mo.records).forEach(r=>{if(r.movieTime===undefined) r.movieTime=null;}); fixCombinedTimes(mo); monthCache[id]=mo; }
   }
   library = await sGet(KEY_LIBRARY, []);
+  slackWebhook = await sGet(KEY_SLACK, '') || '';
   curId = monthIndex[0];
   cur = monthCache[curId];
   buildMonthSelect();
@@ -902,7 +991,7 @@ async function init(){
 async function loadMonth(id){
   curId=id;
   cur = monthCache[id] || await sGet(mKey(id), null);
-  if(cur){ cur.finance = migrateFinance(cur.finance); if(cur.confirmed===undefined) cur.confirmed=false; if(!cur.prevMonthExclusions) cur.prevMonthExclusions=[]; if(!cur.revealed) cur.revealed={}; if(cur.movies) cur.movies.forEach(mv=>{if(!mv.times) mv.times=mv.time?[mv.time]:[];}); if(cur.records) Object.values(cur.records).forEach(r=>{if(r.movieTime===undefined) r.movieTime=null;}); monthCache[id]=cur; }
+  if(cur){ cur.finance = migrateFinance(cur.finance); if(cur.confirmed===undefined) cur.confirmed=false; if(!cur.prevMonthExclusions) cur.prevMonthExclusions=[]; if(!cur.revealed) cur.revealed={}; if(cur.movies) cur.movies.forEach(mv=>{if(!mv.times) mv.times=mv.time?[mv.time]:[];}); if(cur.records) Object.values(cur.records).forEach(r=>{if(r.movieTime===undefined) r.movieTime=null;}); fixCombinedTimes(cur); monthCache[id]=cur; }
   buildMonthSelect();
   renderAll();
 }
@@ -1189,7 +1278,7 @@ function openAttendancePopup(memberId){
     if(attending===true&&r.movieId) autoAddToLibrary(r.movieId);
     const ok=await saveMonth();
     renderActivity();updateSummaryCards();renderFinance();
-    if(ok) toast('저장되었습니다 ✓');
+    if(ok){ toast('저장되었습니다 ✓'); notifyRecordSubmit(m,r); }
   },'저장');
 
   setTimeout(()=>{
@@ -2338,7 +2427,7 @@ function addMovie(){
     ()=>{
       const title=document.getElementById('nm-title').value.trim();
       if(!title){toast('영화 제목을 입력하세요');return false;}
-      const times=document.getElementById('nm-time').value.split(',').map(t=>t.trim()).filter(Boolean);
+      const times=document.getElementById('nm-time').value.split(/,|\.\s+(?=\d)/).map(t=>t.trim()).filter(Boolean);
       cur.movies.push({id:uid(),title,times});
       saveMonth(); renderActivity(); renderReview(); renderFinance();
       toast(title+' 추가됨');
@@ -2353,7 +2442,7 @@ function editMovie(id){
     ()=>{
       const title=document.getElementById('em-mv-title').value.trim();
       if(!title){toast('영화 제목을 입력하세요');return false;}
-      const times=document.getElementById('em-mv-time').value.split(',').map(t=>t.trim()).filter(Boolean);
+      const times=document.getElementById('em-mv-time').value.split(/,|\.\s+(?=\d)/).map(t=>t.trim()).filter(Boolean);
       mv.title=title; mv.times=times;
       saveMonth(); renderActivity(); renderReview(); renderFinance();
       toast('수정되었습니다');
