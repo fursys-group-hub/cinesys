@@ -565,6 +565,9 @@
   <div class="modal" id="modalBox"></div>
 </div>
 <div id="toast"></div>
+<div id="offlineBanner" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#d32f2f;color:#fff;text-align:center;padding:10px 16px;font-size:13.5px;font-weight:600;letter-spacing:.3px;">
+  ⚠️ Firebase 서버와 연결이 끊겼습니다 — 저장이 되지 않습니다. 네트워크를 확인해주세요.
+</div>
 <div id="winnerPopup" style="display:none;position:fixed;inset:0;background:rgba(44,44,44,.6);backdrop-filter:blur(3px);z-index:90;align-items:center;justify-content:center;">
   <div style="background:var(--paper);border:2px solid var(--sepia);border-radius:8px;padding:40px 48px;text-align:center;max-width:380px;width:90%;box-shadow:var(--shadow-lg);animation:pop .3s ease;">
     <div style="font-size:48px;margin-bottom:12px;">🎉</div>
@@ -842,15 +845,16 @@ async function init(){
   members = await sGet(KEY_MEMBERS, null);
   monthIndex = await sGet(KEY_INDEX, null);
 
-  if(!members || !members.length || ver < SCHEMA_VERSION){
-    // 신규 또는 구버전 → 새 시드로 교체
+  // 멤버가 아예 없을 때만 시드 (ver 비교로 리셋하면 기존 ID가 바뀌어 참석 데이터 소실)
+  if(!members || !members.length){
     members = seedMembers();
     await sSet(KEY_MEMBERS, members);
     await sSet(KEY_VER, SCHEMA_VERSION);
     await sSet(KEY_MEMBER_MIGR, MEMBER_MIGR_VER);
-    // 옛 달 데이터가 있으면 유지하되 finance 마이그레이션
   } else {
     members.forEach(migrateMember);
+    // 스키마 버전 최신화 (쓰기 성공 여부와 무관하게 매번 갱신)
+    if(ver < SCHEMA_VERSION) await sSet(KEY_VER, SCHEMA_VERSION);
     // 소속·팀 정정 마이그레이션 (2026-07 구글시트 기준)
     const migrVer = await sGet(KEY_MEMBER_MIGR, 0);
     if(migrVer < MEMBER_MIGR_VER){
@@ -888,6 +892,11 @@ async function init(){
   refreshLibraryLiveData();
   membersReady = true;
   reEvalAuth();
+
+  // Firebase 연결 상태 감지
+  db.ref('.info/connected').on('value', snap => {
+    document.getElementById('offlineBanner').style.display = snap.val() ? 'none' : '';
+  });
 }
 
 async function loadMonth(id){
