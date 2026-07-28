@@ -1822,7 +1822,7 @@ function renderPartyExpense(){
     const recCount = (cur.finance.memberReceipts||{})[m.id]?.filter(r=>!r.settled).length||0;
     const managed = p.managedMemberIds||[m.id];
     const mLabel = managed.length > 1 ? `${managed.length}명` : '본인';
-    const manageBtn = isAdmin() ? `<button class="btn xs ghost" data-act="manage-members" style="margin-left:6px;font-size:10px;padding:2px 6px;">${mLabel}</button>` : '';
+    const manageBtn = canEdit(m.id) ? `<button class="btn xs ghost" data-act="manage-members" style="margin-left:6px;font-size:10px;padding:2px 6px;">${mLabel}</button>` : '';
     h += `<tr data-id="${m.id}">
       <td class="name">${esc(m.name)}${manageBtn}</td>
       <td><input type="text" data-act="pe-item" value="${esc(p.item||'')}" placeholder="예) 치킨, 음료" style="width:100%;max-width:150px"${canEdit(m.id)?'':' disabled'}></td>
@@ -1851,9 +1851,9 @@ function renderPartyExpense(){
       const item = tr.querySelector('[data-act=pe-item]'); if(item) item.onchange = e=>{partyExp(id).item=e.target.value.trim();saveMonth();};
       const amt = tr.querySelector('[data-act=pe-amt]'); if(amt) amt.onchange = e=>{partyExp(id).amount=Number(e.target.value)||0;saveMonth();renderFinance();};
     }
+    const mm = tr.querySelector('[data-act=manage-members]'); if(mm) mm.onclick = ()=>openManagedMembersModal(id);
     if(isAdmin()){
       const rb = tr.querySelector('[data-act=pe-rb]'); if(rb) rb.onclick = ()=>{partyExp(id).reimbursed=!partyExp(id).reimbursed;saveMonth();renderPartyExpense();};
-      const mm = tr.querySelector('[data-act=manage-members]'); if(mm) mm.onclick = ()=>openManagedMembersModal(id);
     }
   });
   const partyPpl = partyAttendees();
