@@ -709,7 +709,7 @@ function notifyRecordSubmit(m,r){
 function notifyReceiptUpload(memberName, entries){
   try{
     if(!slackWebhook) return;
-    const typeLabel=t=>t==='snack'?'간식':'뒷풀이비';
+    const typeLabel=t=>t==='snack'?'간식':t==='afterparty'?'뒷풀이비':'기타';
     const fmtAmt=n=>Number(n).toLocaleString('ko-KR');
     const parts=entries.map(e=>`${typeLabel(e.type)} ${fmtAmt(e.amount)}원${e.desc?` (${e.desc})`:''}`).join(' · ');
     const text=`🧾 [씨네시스 ${curId}] ${memberName} — ${parts} 영수증 업로드`;
@@ -1909,7 +1909,7 @@ function viewReceiptsForMember(memberId){
   if(receipts.length){
     imgHtml=receipts.map((r,i)=>{
       const date=r.uploadedAt?new Date(r.uploadedAt).toLocaleDateString('ko-KR'):'';
-      const typeLabel=r.type==='afterparty'?'뒷풀이비':'간식';
+      const typeLabel=r.type==='afterparty'?'뒷풀이비':r.type==='snack'?'간식':'기타';
       const dlBtn=r.image
         ?`<a href="${r.image}" download="${esc(m.name)}_영수증_${i+1}.jpg" style="display:inline-flex;align-items:center;gap:4px;background:var(--sepia);color:#fff;padding:4px 10px;border-radius:3px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;">⬇ 다운로드</a>`
         :'';
@@ -2008,7 +2008,7 @@ function uploadReceiptForMember(memberId){
           <div style="flex:1;display:flex;flex-direction:column;gap:8px;">
             <div class="grid2">
               <div class="field" style="margin:0"><label style="font-size:11px">금액</label><input class="r-amt" type="number" placeholder="0" style="width:100%;"></div>
-              <div class="field" style="margin:0"><label style="font-size:11px">분류</label><select class="r-type" style="width:100%;"><option value="snack">간식</option><option value="afterparty">뒷풀이비</option></select></div>
+              <div class="field" style="margin:0"><label style="font-size:11px">분류</label><select class="r-type" style="width:100%;"><option value="snack">간식</option><option value="afterparty">뒷풀이비</option><option value="other">기타</option></select></div>
             </div>
             <div class="field" style="margin:0"><label style="font-size:11px">설명 (선택)</label><input class="r-desc" type="text" placeholder="예) 편의점, 카페" style="width:100%;"></div>
           </div>`;
@@ -2029,7 +2029,7 @@ function uploadReceiptModal(){
     </div>
     <div class="grid2">
       <div class="field"><label>금액</label><input id="receiptAmount" type="number" placeholder="0" style="width:100%;"></div>
-      <div class="field"><label>분류</label><select id="receiptType" style="width:100%;"><option value="snack">간식</option><option value="afterparty">뒷풀이비</option></select></div>
+      <div class="field"><label>분류</label><select id="receiptType" style="width:100%;"><option value="snack">간식</option><option value="afterparty">뒷풀이비</option><option value="other">기타</option></select></div>
     </div>
     <div class="field"><label>설명 (선택)</label><input id="receiptDesc" type="text" placeholder="예) 편의점, 카페" style="width:100%;"></div>
   </div>`;
@@ -2070,7 +2070,7 @@ function renderReceipts(){
       <img src="${r.image}" style="width:100%;height:100%;object-fit:cover;">
       <div style="position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);opacity:0;transition:opacity.2s;padding:8px;display:flex;flex-direction:column;justify-content:space-between;color:white;font-size:11px;" class="receipt-hover">
         <div><strong>${r.memberName}</strong></div>
-        <div>${fmt(r.amount)}원<br>${r.type==='snack'?'간식':'뒷풀이'}</div>
+        <div>${fmt(r.amount)}원<br>${r.type==='snack'?'간식':r.type==='afterparty'?'뒷풀이':'기타'}</div>
       </div>
       <div style="position:absolute;top:0;right:0;left:0;bottom:0;" data-id="${r.id}" onmouseover="this.parentElement.querySelector('.receipt-hover').style.opacity='1'" onmouseout="this.parentElement.querySelector('.receipt-hover').style.opacity='0'"></div>
       ${isAdmin()?`<button class="btn xs ghost" style="position:absolute;bottom:2px;right:2px;padding:3px 6px;font-size:10px;" data-act="settle-receipt" data-id="${r.id}">✓</button>`:''}
