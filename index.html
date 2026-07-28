@@ -1810,6 +1810,11 @@ function renderPartyExpense(){
     totalBox.innerHTML = '';
     return;
   }
+  const myMemberId = currentUser
+    ? members.find(mb=>mb.email&&mb.email.toLowerCase()===currentUser.email.toLowerCase())?.id
+    : null;
+  const canEdit = id => isAdmin() || id === myMemberId;
+
   let h = `<thead><tr><th>이름</th><th>항목</th><th>사용 금액(원)</th><th>영수증</th><th>정산 완료</th></tr></thead><tbody>`;
   party.forEach(m=>{
     const p = partyExp(m.id);
@@ -1820,8 +1825,8 @@ function renderPartyExpense(){
     const manageBtn = isAdmin() ? `<button class="btn xs ghost" data-act="manage-members" style="margin-left:6px;font-size:10px;padding:2px 6px;">${mLabel}</button>` : '';
     h += `<tr data-id="${m.id}">
       <td class="name">${esc(m.name)}${manageBtn}</td>
-      <td><input type="text" data-act="pe-item" value="${esc(p.item||'')}" placeholder="예) 치킨, 음료" style="width:100%;max-width:150px"${isAdmin()?'':' disabled'}></td>
-      <td><input type="number" class="num" data-act="pe-amt" value="${p.amount||''}" placeholder="0"${isAdmin()?'':' disabled'}></td>
+      <td><input type="text" data-act="pe-item" value="${esc(p.item||'')}" placeholder="예) 치킨, 음료" style="width:100%;max-width:150px"${canEdit(m.id)?'':' disabled'}></td>
+      <td><input type="number" class="num" data-act="pe-amt" value="${p.amount||''}" placeholder="0"${canEdit(m.id)?'':' disabled'}></td>
       <td><button class="btn xs ghost" data-act="upload-receipt" data-member-id="${m.id}" style="padding:4px 8px;">📸 ${recCount}건</button></td>
       <td>${isT
         ? '<span class="pill self">총무 (면제)</span>'
@@ -1834,20 +1839,23 @@ function renderPartyExpense(){
   t.querySelectorAll('[data-act=upload-receipt]').forEach(btn=>{
     const mid=btn.dataset.memberId;
     btn.onclick=()=>{
+      if(!canEdit(mid)){toast('본인 영수증만 업로드할 수 있습니다');return;}
       const recs=(cur.finance?.memberReceipts||{})[mid]||[];
       if(recs.length) viewReceiptsForMember(mid);
       else uploadReceiptForMember(mid);
     };
   });
-  if(isAdmin()){
-    t.querySelectorAll('tr[data-id]').forEach(tr=>{
-      const id = tr.dataset.id;
+  t.querySelectorAll('tr[data-id]').forEach(tr=>{
+    const id = tr.dataset.id;
+    if(canEdit(id)){
       const item = tr.querySelector('[data-act=pe-item]'); if(item) item.onchange = e=>{partyExp(id).item=e.target.value.trim();saveMonth();};
       const amt = tr.querySelector('[data-act=pe-amt]'); if(amt) amt.onchange = e=>{partyExp(id).amount=Number(e.target.value)||0;saveMonth();renderFinance();};
+    }
+    if(isAdmin()){
       const rb = tr.querySelector('[data-act=pe-rb]'); if(rb) rb.onclick = ()=>{partyExp(id).reimbursed=!partyExp(id).reimbursed;saveMonth();renderPartyExpense();};
       const mm = tr.querySelector('[data-act=manage-members]'); if(mm) mm.onclick = ()=>openManagedMembersModal(id);
-    });
-  }
+    }
+  });
   const partyPpl = partyAttendees();
   const totalSpend = calcMovieTotal() + calcPartyTotal();
   const subsidy = calcSubsidy();
