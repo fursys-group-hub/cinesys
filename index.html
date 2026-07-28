@@ -597,86 +597,76 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
-const auth = firebase.auth();
 
-/* ── 관리자/멤버 설정 ── */
+/* ── 멤버 설정 (localStorage 기반 이름 선택) ── */
 const ADMIN_EMAILS = ['tpfuddl48@fursys.com'];
+const KEY_MY_ID = 'cns-member-id';
 let currentUser = null;
 let membersReady = false;
 
 function isAdmin(){
   if(!currentUser) return false;
-  if(ADMIN_EMAILS.includes(currentUser.email)) return true;
-  const me=members.find(m=>m.email&&m.email.toLowerCase()===currentUser.email.toLowerCase());
-  return !!(me&&(me.role==='총무'||me.role==='회장'));
+  if(currentUser.email && ADMIN_EMAILS.includes(currentUser.email)) return true;
+  const me = memberById(currentUser.memberId);
+  return !!(me && (me.role==='총무' || me.role==='회장'));
 }
 function isTreasurerOrChair(){
   if(!currentUser) return false;
-  const me=members.find(m=>m.email&&m.email.toLowerCase()===currentUser.email.toLowerCase());
-  return !!(me&&(me.role==='총무'||me.role==='회장'));
+  const me = memberById(currentUser.memberId);
+  return !!(me && (me.role==='총무' || me.role==='회장'));
 }
 function isMember(){
-  if(!currentUser) return false;
-  if(isAdmin()) return true;
-  return members.some(m => m.email && m.email.toLowerCase() === currentUser.email.toLowerCase());
+  return !!currentUser;
 }
 
-function showSelectIdentityModal(unlinked){
-  const sorted=[...unlinked].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
-  const opts=sorted.map(m=>`<option value="${m.id}">${esc(m.name)}${m.company?' ('+esc(m.company)+')':''}</option>`).join('');
-  openModal('씨네시스 회원 인증',
+function showMemberSelect(){
+  const list = activeMembers ? activeMembers() : members.filter(m=>m.status!=='탈퇴');
+  const sorted = [...list].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  const opts = sorted.map(m=>`<option value="${m.id}">${esc(m.name)}${m.company?' ('+esc(m.company)+')':''}</option>`).join('');
+  const cur = currentUser ? currentUser.memberId : '';
+  openModal('내 이름 선택',
     `<p style="font-size:13.5px;line-height:1.8;margin-bottom:14px;color:var(--ink2);">
-       <b style="color:var(--ink)">${esc(currentUser.email)}</b>으로 로그인했습니다.<br>
-       아래에서 본인 이름을 선택하면 이후 자동으로 인식됩니다.
+       목록에서 본인 이름을 선택하면 이후에도 자동으로 기억됩니다.
      </p>
-     <div class="field"><label>내 이름 선택</label>
-       <select id="identitySelect" style="width:100%;padding:8px;font-size:14px;">${opts}</select>
+     <div class="field"><label>이름</label>
+       <select id="memberSelectDrop" style="width:100%;padding:8px;font-size:14px;">
+         <option value="">— 이름을 선택하세요 —</option>${opts}
+       </select>
      </div>`,
-    async()=>{
-      const id=document.getElementById('identitySelect').value;
-      const m=memberById(id); if(!m){toast('멤버를 찾을 수 없습니다');return false;}
-      if(m.email&&m.email!==currentUser.email.toLowerCase()){toast('이미 다른 계정으로 연결된 멤버입니다');return false;}
-      m.email=currentUser.email.toLowerCase();
-      await saveMembers();
-      toast(`${m.name}님으로 인증되었습니다 ✓`);
+    ()=>{
+      const id = document.getElementById('memberSelectDrop').value;
+      if(!id){ toast('이름을 선택해주세요'); return false; }
+      const m = memberById(id); if(!m){ toast('멤버를 찾을 수 없습니다'); return false; }
+      localStorage.setItem(KEY_MY_ID, m.id);
+      currentUser = {memberId: m.id, displayName: m.name, email: m.email||''};
       reEvalAuth();
+      toast(`${m.name}님으로 설정됐습니다 ✓`);
     },'확인','primary');
-  // 취소 시 로그아웃
-  setTimeout(()=>{
-    const btn=document.getElementById('mCancel');
-    if(btn){btn.textContent='로그아웃';btn.onclick=()=>{closeModal();auth.signOut();};}
-  },0);
-}
-
-function showNonMemberPopup(){
-  openModal('접근 제한',
-    `<div style="text-align:center;padding:8px 0 4px;">
-       <div style="font-size:40px;margin-bottom:14px;">🎬</div>
-       <p style="font-size:15px;font-weight:600;color:var(--ink);margin-bottom:10px;">인증된 회원이 아닙니다.</p>
-       <p style="font-size:13.5px;color:var(--ink2);line-height:1.7;">씨네시스 회원이 되고 싶으시면<br><b style="color:var(--sepia)">최세령</b>님에게 문의해주세요.</p>
-     </div>`,
-    ()=>{}, '확인', 'primary');
+  if(cur){
+    setTimeout(()=>{ const s=document.getElementById('memberSelectDrop'); if(s) s.value=cur; },0);
+  }
 }
 
 function updateAuthArea(){
   const area = document.getElementById('authArea');
   if(!area) return;
-  if(currentUser && isMember()){
+  if(currentUser){
     const admin = isAdmin();
     area.innerHTML = `
-      <span class="auth-badge ${admin?'admin':'guest'}">${admin?'🔑 관리자':'👤 '+esc(currentUser.displayName||currentUser.email)}</span>
+      <span class="auth-badge ${admin?'admin':'guest'}" style="cursor:pointer;" onclick="showMemberSelect()" title="이름 변경">${admin?'🔑 관리자':'👤 '+esc(currentUser.displayName)}</span>
       ${admin?`<button class="btn sm ghost" onclick="openNotifPanel()" title="회원 응답 알림" style="position:relative;font-size:13px;padding:4px 8px;">🔔<span id="notifBadge" style="display:none;position:absolute;top:-5px;right:-5px;background:var(--burgundy);color:#fff;font-size:9.5px;font-weight:700;min-width:15px;height:15px;line-height:15px;text-align:center;border-radius:8px;padding:0 3px;"></span></button>`:''}
       <button class="btn sm ghost" onclick="authSignOut()" style="font-size:11px;padding:4px 9px;">로그아웃</button>`;
     if(admin){ watchNotifications(); updateNotifBadge(); }
   } else {
-    area.innerHTML = `<button class="btn sm" onclick="authSignIn()" style="font-size:12px;padding:5px 11px;">🔑 로그인</button>`;
+    area.innerHTML = `<button class="btn sm" onclick="showMemberSelect()" style="font-size:12px;padding:5px 11px;">👤 내 이름 선택</button>`;
   }
 }
-function authSignIn(){
-  const provider = new firebase.auth.GoogleAuthProvider();
-  auth.signInWithPopup(provider).catch(e=>toast('로그인 실패: '+e.message));
+function authSignIn(){ showMemberSelect(); }
+function authSignOut(){
+  localStorage.removeItem(KEY_MY_ID);
+  currentUser = null;
+  reEvalAuth();
 }
-function authSignOut(){ auth.signOut(); }
 
 /* ── 알림 (회원 응답 → 관리자) ── */
 const NOTIF_PATH='cinesys/cns-notif';
@@ -782,18 +772,6 @@ function reEvalAuth(){
     return;
   }
   const admin = isAdmin();
-  const member = isMember();
-  if(!admin && !member){
-    // 이메일 미설정 멤버가 있으면 본인 선택 안내 (신규 로그인)
-    const unlinked = activeMembers ? activeMembers().filter(m=>!m.email) : [];
-    if(unlinked.length){
-      showSelectIdentityModal(unlinked);
-      return;
-    }
-    showNonMemberPopup();
-    auth.signOut();
-    return;
-  }
   document.body.classList.remove('guest','member','admin');
   if(admin) document.body.classList.add('admin');
   else document.body.classList.add('member');
@@ -807,15 +785,6 @@ function reEvalAuth(){
   renderFinance();
   renderReviewerBoard();
 }
-
-auth.onAuthStateChanged(user=>{
-  currentUser = user;
-  if(!membersReady){
-    updateAuthArea();
-    return;
-  }
-  reEvalAuth();
-});
 
 const SCHEMA_VERSION = 2;
 const memStore = {};
@@ -1031,6 +1000,11 @@ async function init(){
   renderAll();
   refreshLibraryLiveData();
   membersReady = true;
+  const savedId = localStorage.getItem(KEY_MY_ID);
+  const savedMember = savedId ? memberById(savedId) : null;
+  if(savedMember){
+    currentUser = {memberId: savedMember.id, displayName: savedMember.name, email: savedMember.email||''};
+  }
   reEvalAuth();
 
   // Firebase 연결 상태 감지
@@ -1843,9 +1817,7 @@ function renderPartyExpense(){
     totalBox.innerHTML = '';
     return;
   }
-  const myMemberId = currentUser
-    ? members.find(mb=>mb.email&&mb.email.toLowerCase()===currentUser.email.toLowerCase())?.id
-    : null;
+  const myMemberId = currentUser?.memberId || null;
   const canEdit = id => isAdmin() || id === myMemberId;
 
   let h = `<thead><tr><th>이름</th><th>항목</th><th>사용 금액(원)</th><th>영수증</th><th>정산 완료</th></tr></thead><tbody>`;
@@ -1929,7 +1901,7 @@ function viewReceiptsForMember(memberId){
   const m=members.find(x=>x.id===memberId); if(!m) return;
   const receipts=(cur.finance?.memberReceipts||{})[memberId]||[];
   const admin=isAdmin();
-  const myId=members.find(x=>x.email&&currentUser&&x.email.toLowerCase()===currentUser.email.toLowerCase())?.id;
+  const myId = currentUser?.memberId;
   const canUpload=admin||(myId===memberId);
   const canDelete=admin||(myId===memberId);
 
@@ -2070,8 +2042,7 @@ function uploadReceiptModal(){
     if(!cur.finance.receipts) cur.finance.receipts=[];
     cur.finance.receipts.push({id:uid(),memberId:m.id,memberName:m.name,type,amount:amt,image:fileData,description:desc,uploadedAt:new Date().toISOString(),settled:false});
     await saveMonth();renderFinance();toast('영수증이 업로드되었습니다');
-    const me=members.find(mb=>mb.email&&mb.email.toLowerCase()===currentUser.email?.toLowerCase());
-    notifyReceiptUpload(me?.name||currentUser.displayName||'회원',[{type,amount:amt,desc}]);
+    notifyReceiptUpload(currentUser.displayName||'회원',[{type,amount:amt,desc}]);
   },'업로드','primary');
   const fileInput=document.getElementById('receiptFile');
   fileInput.onchange=(e)=>{
