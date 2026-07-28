@@ -714,13 +714,21 @@ function openSlackSettings(){
        슬랙 <b>Incoming Webhook URL</b>을 등록하면 회원이 참석 정보를 저장할 때마다 슬랙 채널로 알림이 갑니다.<br>
        <a href="https://api.slack.com/messaging/webhooks" target="_blank" rel="noopener noreferrer" style="color:var(--sepia);">웹훅 만들기 가이드 →</a></p>
      <div class="field"><label>Webhook URL</label><input id="slackUrl" type="text" placeholder="https://hooks.slack.com/services/..." value="${esc(slackWebhook||'')}"></div>
-     <p style="font-size:11px;color:var(--ink3);margin-top:8px;">비워두고 저장하면 슬랙 알림이 꺼집니다. (사이트 내 🔔 알림은 계속 작동)</p>`,
+     <p style="font-size:11px;color:var(--ink3);margin-top:8px;">비워두고 저장하면 슬랙 알림이 꺼집니다. (사이트 내 🔔 알림은 계속 작동)</p>
+     <button class="btn sm ghost" style="margin-top:8px;" onclick="slackTestSend()">📨 테스트 알림 보내기</button>`,
     async()=>{
       const url=document.getElementById('slackUrl').value.trim();
       if(url && !url.startsWith('https://hooks.slack.com/')){toast('올바른 슬랙 웹훅 URL이 아닙니다');return false;}
       slackWebhook=url; await sSet(KEY_SLACK,url);
       toast(url?'슬랙 연동이 저장되었습니다 ✓':'슬랙 알림이 해제되었습니다');
     },'저장','primary');
+}
+function slackTestSend(){
+  const url=document.getElementById('slackUrl')?.value.trim()||slackWebhook;
+  if(!url){toast('먼저 Webhook URL을 입력해주세요');return;}
+  fetch(url,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify({text:'🎬 [씨네시스] 슬랙 알림 연동 테스트 메시지입니다 ✓'})})
+    .then(()=>toast('테스트 알림을 보냈습니다 — 슬랙 채널을 확인해주세요'))
+    .catch(()=>toast('전송 실패 — URL을 다시 확인해주세요'));
 }
 
 function reEvalAuth(){
