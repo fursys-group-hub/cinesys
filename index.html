@@ -249,11 +249,14 @@
   .auth-badge.guest{background:var(--paper2);color:var(--ink3);border:1px solid var(--line);}
   /* 권한별 제한 */
   body:not(.admin) .admin-only{display:none!important;}
-  body:not(.admin) #sec-finance input,
-  body:not(.admin) #sec-finance select{pointer-events:none;opacity:.5;background:var(--paper2);}
-  body:not(.admin) #sec-finance .btn{pointer-events:none;opacity:.4;}
-  body:not(.admin) #sec-finance .ep-view-btn{pointer-events:auto!important;opacity:1!important;}
-  body:not(.admin) #sec-finance .cost-total{opacity:1;}
+  body.guest #sec-finance input,
+  body.guest #sec-finance select{pointer-events:none;opacity:.5;background:var(--paper2);}
+  body.guest #sec-finance .btn{pointer-events:none;opacity:.4;}
+  body.guest #sec-finance .ep-view-btn{pointer-events:auto!important;opacity:1!important;}
+  body.guest #sec-finance .cost-total{opacity:1;}
+  body.member #sec-finance .admin-only{pointer-events:none;opacity:.4;}
+  body.member #sec-finance input:disabled,
+  body.member #sec-finance select:disabled{pointer-events:none;opacity:.4;background:var(--paper2);}
   body:not(.admin) .x{display:none!important;}
   /* 게스트: 멤버 전용 탭 숨김 */
   body.guest .member-only{display:none!important;}
@@ -1683,7 +1686,7 @@ function renderFinance(){
 
   setTimeout(()=>{
     const uploadBtn = document.getElementById('uploadReceiptBtn');
-    if(uploadBtn && currentUser) uploadBtn.onclick = uploadReceiptModal;
+    if(uploadBtn && currentUser) uploadBtn.onclick = ()=>uploadReceiptForMember(currentUser.memberId);
   }, 50);
 }
 
