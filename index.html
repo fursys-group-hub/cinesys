@@ -329,7 +329,7 @@
   .moviecard .mt,.moviecard .mtm,
   .rb-card .rb-movie,.rb-card .rb-win,.rb-card .rb-none,
   .role-chip,
-  .cost-title,.cost-total .lbl,.callout .ct,.callout .cb,
+  .cost-title,.cost-total .lbl,.cost-total .amount,.callout .ct,.callout .cb,
   .summary-block .label,
   .month-trigger,.month-option,.month-add-btn,
   .modal h3,.field label,
@@ -721,6 +721,34 @@ function notifyReceiptUpload(memberName, entries){
 }
 
 function openNotifPanel(){
+  // 정산 요약
+  let finSummary = '';
+  if(cur && cur.finance){
+    const subsidy = calcSubsidy();
+    const movies  = calcMovieTotal();
+    const party   = calcPartyTotal();
+    const spend   = movies + party;
+    const diff    = spend - subsidy;
+    const diffLabel = diff < 0
+      ? `<span style="color:var(--sage);font-weight:600;">잔액 ${fmt(-diff)}원</span>`
+      : diff > 0
+        ? `<span style="color:var(--burgundy);font-weight:600;">초과 ${fmt(diff)}원</span>`
+        : `<span style="color:var(--sage);font-weight:600;">정산 균형</span>`;
+    const per = cur.finance.perPerson || 30000;
+    const att = partyAttendees ? partyAttendees().length : 0;
+    finSummary = `
+      <div style="background:var(--paper2);border:1px solid var(--line);border-radius:6px;padding:12px 14px;margin-bottom:12px;">
+        <div style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;text-transform:uppercase;margin-bottom:8px;">이번 달 정산 현황</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px 16px;font-size:13px;">
+          <div style="color:var(--ink2);">회사 지원금</div><div style="text-align:right;font-weight:600;">${fmt(subsidy)}원 <span style="font-size:11px;color:var(--ink3);">(${att}명×${fmt(per)}원)</span></div>
+          <div style="color:var(--ink2);">영화비</div><div style="text-align:right;font-weight:600;">${fmt(movies)}원</div>
+          <div style="color:var(--ink2);">간식/뒷풀이비</div><div style="text-align:right;font-weight:600;">${fmt(party)}원</div>
+          <div style="color:var(--ink2);border-top:1px solid var(--line);padding-top:5px;margin-top:2px;">총 지출</div><div style="text-align:right;font-weight:600;border-top:1px solid var(--line);padding-top:5px;margin-top:2px;">${fmt(spend)}원</div>
+        </div>
+        <div style="text-align:right;margin-top:7px;font-size:13px;">${diffLabel}</div>
+      </div>`;
+  }
+
   const rows=notifList.length?notifList.map(n=>{
     const d=n.ts?new Date(n.ts):null;
     const when=d?`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`:'-';
@@ -732,7 +760,9 @@ function openNotifPanel(){
     </div>`;
   }).join(''):'<div class="empty">아직 알림이 없습니다.<br>회원이 참석·영화·뒷풀이를 저장하면 여기에 표시됩니다.</div>';
   openModal('🔔 회원 응답 알림',
-    `<div style="max-height:340px;overflow-y:auto;margin-bottom:6px;">${rows}</div>
+    `${finSummary}
+     <div style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;text-transform:uppercase;margin-bottom:6px;">회원 응답</div>
+     <div style="max-height:280px;overflow-y:auto;margin-bottom:6px;">${rows}</div>
      <button class="btn sm ghost" onclick="openSlackSettings()" style="font-size:11.5px;">⚙ 슬랙 알림 연동${slackWebhook?' (연동됨 ✓)':''}</button>`,
     ()=>{}, '확인');
   if(notifList[0]&&notifList[0].ts) localStorage.setItem('cns-notif-seen', String(notifList[0].ts));
