@@ -531,7 +531,7 @@
 
     <div class="panel">
       <h2><span class="ic">💰</span> 정산 세부 내역</h2>
-      <div class="desc">간식/뒷풀이비 초과액을 각 회원별로 정산합니다.</div>
+      <div class="desc">지원금(1인 30,000원) 내에서만 정산합니다. <strong>간식 허용 금액 = 지원금 − 영화비</strong>. 정산금이 음수(−)이면 회원이 총무에게 납부해야 합니다.</div>
       <div class="scroll">
         <table class="tbl" id="settlementDetailTbl"></table>
       </div>
@@ -2219,11 +2219,9 @@ function renderSettlementDetail(){
 
   const subsidyPer = cur.finance?.perPerson || 30000;
 
-  // 영화 제목 조회
   const movieTitleMap = {};
   (cur.movies||[]).forEach(mv => { movieTitleMap[mv.id] = mv.title; });
 
-  // 시간대별 참석자 맵: "movieId|movieTime" -> {memberIds[], movieCost}
   const screeningMap = {};
   Object.entries(cur.records||{}).forEach(([memberId, rec]) => {
     if(!rec.attending || !rec.movieId) return;
@@ -2237,7 +2235,6 @@ function renderSettlementDetail(){
     screeningMap[key].movieCost = mc.amount || 0;
   });
 
-  // 회원별 영화비 + 영화제목 집계 (단순 n분의 1)
   const memberMovieCost = {};
   const memberTitles = {};
   members.forEach(m => { memberMovieCost[m.id] = 0; memberTitles[m.id] = []; });
@@ -2256,7 +2253,6 @@ function renderSettlementDetail(){
 
   const partyExpenses = cur.finance?.partyExpenses || {};
 
-  // 다른 payer의 managedMemberIds에 포함된 멤버 → 별도 행 숨김
   const coveredByPayer = {};
   Object.entries(partyExpenses).forEach(([payerId, pe]) => {
     if((pe.amount||0) > 0 && pe.managedMemberIds) {
@@ -2265,16 +2261,25 @@ function renderSettlementDetail(){
   });
 
   const sortedMembers = [...members].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+
+  // 열 너비 힌트: 숫자 열은 오른쪽 정렬
+  const RAL = 'style="text-align:right"';
+  const ALLOW_BG = 'style="text-align:right;background:rgba(90,138,74,.07)"';
+  const ALLOW_TH = 'style="text-align:right;background:rgba(90,138,74,.12)"';
+
   let h = `<thead><tr>
-    <th>회원명</th><th>영화</th>
-    <th>지원금</th>
-    <th>영화비</th>
-    <th>간식비</th>
-    <th>정산금</th>
+    <th>회원명</th>
+    <th>관람 영화</th>
+    <th ${RAL}>지원금</th>
+    <th ${RAL}>영화비</th>
+    <th ${ALLOW_TH}>간식<br>허용 금액</th>
+    <th ${RAL}>실제<br>간식비</th>
+    <th ${RAL}>정산금</th>
   </tr></thead><tbody>`;
 
+  let sumSubsidy=0, sumMovie=0, sumAllow=0, sumSnack=0, sumSettle=0, rowCount=0;
+
   sortedMembers.forEach(m => {
-    // 다른 사람이 담당하는 멤버는 행 숨김
     if(coveredByPayer[m.id]) return;
 
     const snack = partyExpenses[m.id]?.amount || 0;
@@ -2287,7 +2292,6 @@ function renderSettlementDetail(){
       const managed = partyExpenses[m.id]?.managedMemberIds || [m.id];
       groupCount = managed.length;
       managedNames = managed.map(id => members.find(x=>x.id===id)?.name).filter(Boolean);
-      // 담당 인원 영화비 합산 + 영화 제목 합산
       movieCost = managed.reduce((sum, mid) => sum + (memberMovieCost[mid]||0), 0);
       const allTitles = [];
       managed.forEach(mid => { (memberTitles[mid]||[]).forEach(t => { if(!allTitles.includes(t)) allTitles.push(t); }); });
@@ -2297,25 +2301,58 @@ function renderSettlementDetail(){
     const hasData = movieCost > 0 || snack > 0;
     if(!hasData) return;
 
-    const subsidy = groupCount * subsidyPer;
-    const settle  = subsidy - movieCost - snack;
-    const settleColor = settle < 0 ? 'var(--burgundy)' : 'var(--sage)';
-    const settleText  = settle === 0 ? '-'
-      : settle < 0 ? `초과 -${fmt(Math.abs(settle))}원`
+    const subsidy      = groupCount * subsidyPer;
+    const snackAllow   = subsidy - movieCost;        // 간식 허용 금액
+    const settle       = snackAllow - snack;          // 정산금
+
+    sumSubsidy += subsidy; sumMovie += movieCost;
+    sumAllow   += snackAllow; sumSnack += snack; sumSettle += settle;
+    rowCount++;
+
+    const allowColor  = snackAllow < 0 ? 'color:var(--burgundy)' : '';
+    const settleColor = settle < 0 ? 'color:var(--burgundy);font-weight:700'
+                      : settle > 0 ? 'color:var(--sage);font-weight:700'
+                      : 'color:var(--ink3)';
+    const settleText  = settle === 0 ? '—'
+      : settle < 0 ? `−${fmt(Math.abs(settle))}원`
       : `+${fmt(settle)}원`;
-    const titleText = effectiveTitles.map(t=>`🎬 ${esc(t)}`).join('<br>') || '-';
-    const namesLabel = managedNames.length > 1
-      ? `<br><span style="font-size:10px;color:var(--ink3);font-weight:400">${groupCount}명 담당 (${managedNames.join(', ')})</span>`
+    const settleTag   = settle < 0
+      ? `<div style="font-size:10px;color:var(--burgundy);margin-top:1px">납부 필요</div>` : '';
+
+    const titleText   = effectiveTitles.map(t=>`🎬 ${esc(t)}`).join('<br>') || '—';
+    const namesLabel  = managedNames.length > 1
+      ? `<div style="font-size:10px;color:var(--ink3);margin-top:2px">${groupCount}명 담당 (${managedNames.join(', ')})</div>`
       : '';
+
     h += `<tr>
-      <td style="font-weight:500">${esc(m.name)}</td>
+      <td style="font-weight:500">${esc(m.name)}${namesLabel}</td>
       <td style="font-size:12px;color:var(--ink3)">${titleText}</td>
-      <td>${fmt(subsidy)}원${namesLabel}</td>
-      <td>${movieCost > 0 ? fmt(movieCost)+'원' : '-'}</td>
-      <td>${snack > 0 ? fmt(snack)+'원' : '-'}</td>
-      <td style="font-weight:600;color:${settleColor}">${settleText}</td>
+      <td ${RAL}>${fmt(subsidy)}원</td>
+      <td ${RAL}>${movieCost > 0 ? fmt(movieCost)+'원' : '—'}</td>
+      <td style="text-align:right;background:rgba(90,138,74,.07);font-weight:600;${allowColor}">${fmt(snackAllow)}원</td>
+      <td ${RAL}>${snack > 0 ? fmt(snack)+'원' : '—'}</td>
+      <td style="text-align:right;${settleColor}">${settleText}${settleTag}</td>
     </tr>`;
   });
+
+  // 합계 행
+  if(rowCount > 1){
+    const sTotalColor = sumSettle < 0 ? 'color:var(--burgundy);font-weight:700'
+                       : sumSettle > 0 ? 'color:var(--sage);font-weight:700'
+                       : 'color:var(--ink3)';
+    const sTotalText  = sumSettle === 0 ? '—'
+      : sumSettle < 0 ? `−${fmt(Math.abs(sumSettle))}원`
+      : `+${fmt(sumSettle)}원`;
+    h += `<tr style="border-top:2px solid var(--sepia-dim);background:var(--paper2);">
+      <td colspan="2" style="font-weight:700;font-size:12px;color:var(--ink2);padding-top:10px">합 계</td>
+      <td ${RAL} style="font-weight:600">${fmt(sumSubsidy)}원</td>
+      <td ${RAL} style="font-weight:600">${sumMovie > 0 ? fmt(sumMovie)+'원' : '—'}</td>
+      <td style="text-align:right;background:rgba(90,138,74,.12);font-weight:700">${fmt(sumAllow)}원</td>
+      <td ${RAL} style="font-weight:600">${sumSnack > 0 ? fmt(sumSnack)+'원' : '—'}</td>
+      <td style="text-align:right;${sTotalColor}">${sTotalText}</td>
+    </tr>`;
+  }
+
   h += '</tbody>';
   tbl.innerHTML = h;
 }
