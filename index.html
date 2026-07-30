@@ -457,23 +457,30 @@
           </div>
         </div>
 
-        <!-- 후기 당첨 룰렛 (참석 확정 후 공개) -->
+        <!-- 후기 패널 -->
         <div id="sec-roulette" style="display:none;">
           <div class="panel">
-            <h2><span class="ic">🎡</span> 후기 당첨 룰렛</h2>
-            <div style="margin-bottom:20px;">
-              <label style="display:block;font-family:'Montserrat';font-size:10.5px;color:var(--ink3);text-transform:uppercase;letter-spacing:1.2px;font-weight:600;margin-bottom:6px;">영화 선택</label>
-              <select id="reviewMovie" style="font-size:13px;padding:6px 9px;width:240px;max-width:100%;"></select>
-            </div>
-            <div style="text-align:center;">
-              <div class="wheel-box" style="width:240px;margin:0 auto;">
-                <div class="pointer"></div>
-                <canvas id="wheel" width="640" height="640" style="width:240px;height:240px;"></canvas>
-                <button id="spinBtn" class="wheel-hub" style="width:44px;height:44px;font-size:20px;">▶</button>
+            <h2 id="reviewPanelTitle"><span class="ic">🎡</span> 후기 당첨 룰렛</h2>
+
+            <!-- 구 시스템: 룰렛 (2025-07 이전 달) — 기능 삭제, 껍데기 유지 -->
+            <div id="rouletteUI">
+              <div style="margin-bottom:20px;">
+                <label style="display:block;font-family:'Montserrat';font-size:10.5px;color:var(--ink3);text-transform:uppercase;letter-spacing:1.2px;font-weight:600;margin-bottom:6px;">영화 선택</label>
+                <select id="reviewMovie" style="font-size:13px;padding:6px 9px;width:240px;max-width:100%;"></select>
               </div>
-              <p style="text-align:center;font-size:12px;color:var(--ink3);margin:10px 0 0;">▶ 가운데 버튼을 눌러 룰렛을 돌려주세요</p>
+              <div style="text-align:center;">
+                <div class="wheel-box" style="width:240px;margin:0 auto;">
+                  <div class="pointer"></div>
+                  <canvas id="wheel" width="640" height="640" style="width:240px;height:240px;"></canvas>
+                  <button id="spinBtn" class="wheel-hub" style="width:44px;height:44px;font-size:20px;">▶</button>
+                </div>
+              </div>
+              <h2 style="font-size:17px;margin-top:20px;"><span class="ic">🏆</span> 이달의 후기 담당</h2>
             </div>
-            <h2 style="font-size:17px;margin-top:20px;"><span class="ic">🏆</span> 이달의 후기 담당</h2>
+
+            <!-- 신 시스템: 순서 (2025-07 이후 달) -->
+            <div id="reviewOrderUI" style="display:none;"></div>
+
             <div class="reviewer-board" id="reviewerBoard"></div>
           </div>
         </div>
@@ -1596,17 +1603,21 @@ function renderConfirmSection(){
     const ub = document.getElementById('unconfirmBtn');
     if(ub) ub.onclick = unconfirmAttendance;
   } else if(isAdmin()){
-    section.innerHTML = '<button class="btn primary lg" id="confirmBtn">✅ 참석 확정하기</button><div style="margin-top:8px;font-size:12.5px;color:var(--ink3)">확정하면 <strong>룰렛 당첨자·집계·정산</strong>이 모두 이 시점 데이터로 결정됩니다. 참석/뒷풀이는 확정 후에도 수정 가능하지만 룰렛 결과는 바뀌지 않아요.</div>';
+    const newSys = isNewReviewSystem();
+    section.innerHTML = `<button class="btn primary lg" id="confirmBtn">✅ 참석 확정하기</button><div style="margin-top:8px;font-size:12.5px;color:var(--ink3)">확정하면 <strong>${newSys ? '후기 순서·집계·정산' : '룰렛 당첨자·집계·정산'}</strong>이 모두 이 시점 데이터로 결정됩니다. 참석/뒷풀이는 확정 후에도 수정 가능합니다.</div>`;
     const cb = document.getElementById('confirmBtn');
     if(cb) cb.onclick = confirmAttendance;
   } else {
-    section.innerHTML = '<div class="lock-notice">🔒 총무/회장이 참석을 확정하면 룰렛이 활성화됩니다.</div>';
+    section.innerHTML = '<div class="lock-notice">🔒 총무/회장이 참석을 확정해야 집계·정산이 활성화됩니다.</div>';
   }
 }
 function renderRouletteSectionVisibility(){
   const sec = document.getElementById('sec-roulette');
   if(!sec || !cur) return;
-  if(cur.confirmed){
+  if(isNewReviewSystem()){
+    sec.style.display = ''; // 신 시스템: 확정 여부 무관하게 항상 표시
+    renderReview();
+  } else if(cur.confirmed){
     sec.style.display = '';
     renderReview();
   } else {
@@ -2361,9 +2372,117 @@ function renderPartyTable(){
   }
 }
 
-/* ============== REVIEW ============== */
+/* ============== REVIEW ORDER ============== */
+const REVIEW_START_MONTH = '2025-07'; // 가나다 순 방식 시작 월
+
+function isNewReviewSystem(){ return !!curId && curId >= REVIEW_START_MONTH; }
+
+function getReviewOrder(){
+  const active = members.filter(m => !m.leaveDate && m.status !== '탈퇴');
+  const chair  = active.find(m => m.name === '정수현');
+  const rest   = active.filter(m => m.name !== '정수현').sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  return chair ? [chair, ...rest] : rest;
+}
+
+function getMonthTurnIdx(monthId){
+  const [sy,sm] = REVIEW_START_MONTH.split('-').map(Number);
+  const [y,m]   = monthId.split('-').map(Number);
+  return (y-sy)*12+(m-sm);
+}
+
+function getMonthReviewer(monthId){
+  if(!monthId || monthId < REVIEW_START_MONTH) return null;
+  const order = getReviewOrder();
+  return order.length ? order[getMonthTurnIdx(monthId) % order.length] : null;
+}
+
+function renderReviewOrderUI(){
+  const wrap = document.getElementById('reviewOrderUI'); if(!wrap) return;
+  const order    = getReviewOrder();
+  const curTurn  = getMonthTurnIdx(curId);
+  const reviewer = order[curTurn % order.length];
+  if(!reviewer){ wrap.innerHTML='<div class="empty">순서 정보를 찾을 수 없습니다.</div>'; return; }
+
+  // 현재 사이클의 시작/끝
+  const cycleStart = Math.floor(curTurn / order.length) * order.length;
+  const [sy,sm] = REVIEW_START_MONTH.split('-').map(Number);
+
+  function idxToMonthLabel(absIdx){
+    const tot = sy*12+sm-1+absIdx;
+    return `${Math.floor(tot/12)}.${String((tot%12)+1).padStart(2,'0')}`;
+  }
+
+  // 스포트라이트 카드
+  let html = `
+    <div style="border-left:3px solid var(--sepia);background:var(--paper2);border-radius:0 4px 4px 0;padding:12px 14px;margin-bottom:14px;">
+      <div style="font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--sepia);font-weight:700;margin-bottom:5px;font-family:'Montserrat',sans-serif;">${curId.replace('-','년 ')}월</div>
+      <div style="font-family:'Noto Serif KR',serif;font-size:24px;font-weight:700;color:var(--sepia-hi);letter-spacing:-.5px;line-height:1.2;margin-bottom:3px;">${esc(reviewer.name)}</div>
+      <div style="font-size:11.5px;color:var(--ink3);">전체 순서 ${curTurn % order.length + 1}번째</div>
+    </div>
+    <div style="position:relative;">
+      <div style="position:absolute;left:7px;top:6px;bottom:6px;width:1px;background:var(--line);"></div>`;
+
+  order.forEach((m, i) => {
+    const absIdx  = cycleStart + i;
+    const isPast  = absIdx < curTurn;
+    const isCur   = absIdx === curTurn;
+    const isNext  = absIdx === curTurn + 1;
+    const dotSz   = isCur ? 'width:10px;height:10px;margin-left:3px' : 'width:8px;height:8px;margin-left:4px';
+    const dotClr  = isPast ? 'background:var(--sage)' : isCur ? 'background:var(--sepia);box-shadow:0 0 0 3px var(--paper),0 0 0 4.5px var(--sepia)' : 'background:var(--line2)';
+    const nameClr = isPast ? 'color:var(--ink3);text-decoration:line-through;text-decoration-color:var(--line2)' : isCur ? 'color:var(--sepia-hi);font-weight:700' : 'color:var(--ink2)';
+    const tag     = isCur  ? `<span style="font-size:9.5px;background:rgba(184,133,79,.14);color:var(--sepia-hi);border:1px solid var(--sepia-dim);padding:2px 6px;border-radius:3px;font-weight:700;">이번 달</span>`
+                  : isNext ? `<span style="font-size:10.5px;color:var(--ink3);">다음</span>`
+                  : isPast ? `<span style="font-size:10.5px;color:var(--ink3);font-variant-numeric:tabular-nums;">${idxToMonthLabel(absIdx)}</span>`
+                  : '';
+    html += `<div style="display:flex;align-items:center;gap:10px;padding:5px 0;position:relative;z-index:1;">
+      <div style="border-radius:50%;flex-shrink:0;${dotSz};${dotClr};"></div>
+      <span style="font-size:13px;flex:1;${nameClr}">${esc(m.name)}</span>
+      ${tag}
+    </div>`;
+  });
+
+  const nextMember = order[(curTurn + 1) % order.length];
+  html += `</div>
+    <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--line);font-size:12px;color:var(--ink3);">
+      → 다음 달: <strong style="color:var(--ink2);">${esc(nextMember.name)}</strong>
+    </div>`;
+
+  wrap.innerHTML = html;
+
+  // 라이브러리 자동연동 호환 — cur.reviewer에 memberId 기록
+  if(cur && reviewer){ cur.reviewer = reviewer.id; }
+}
+
+/* ============== ROULETTE (구 시스템) ============== */
 let wheelAngle=0, spinning=false;
 function renderReview(){
+  const titleEl     = document.getElementById('reviewPanelTitle');
+  const rouletteUI  = document.getElementById('rouletteUI');
+  const reviewOrdUI = document.getElementById('reviewOrderUI');
+
+  if(isNewReviewSystem()){
+    if(titleEl)     titleEl.innerHTML = '<span class="ic">📋</span> 후기 순서';
+    if(rouletteUI)  rouletteUI.style.display  = 'none';
+    if(reviewOrdUI) reviewOrdUI.style.display  = '';
+    renderReviewOrderUI();
+    renderReviewerBoard();
+    return;
+  }
+
+  // 구 시스템 (룰렛)
+  if(titleEl)     titleEl.innerHTML = '<span class="ic">🎡</span> 후기 당첨 룰렛';
+  if(rouletteUI)  rouletteUI.style.display  = '';
+  if(reviewOrdUI) reviewOrdUI.style.display  = 'none';
+
+  // 2025-07 이전 달(5·6월)은 스핀 비활성 — 결과만 표시
+  const spinBtnEl = document.getElementById('spinBtn');
+  const isLocked  = !!(curId && curId < REVIEW_START_MONTH);
+  if(spinBtnEl){
+    spinBtnEl.disabled = isLocked;
+    spinBtnEl.style.opacity = isLocked ? '.3' : '';
+    spinBtnEl.title = isLocked ? '이 달은 룰렛 결과 기록만 확인 가능합니다' : '';
+  }
+
   const sel=document.getElementById('reviewMovie');
   const prev=sel.value; sel.innerHTML='';
   if(!cur.movies.length){ sel.innerHTML='<option>상영작 없음</option>'; }
@@ -2404,6 +2523,8 @@ function drawWheel(rot){
   ctx.beginPath();ctx.arc(cx,cy,R,0,7);ctx.strokeStyle='#b8854f';ctx.lineWidth=5;ctx.stroke();
 }
 function spin(){
+  if(isNewReviewSystem()) return;
+  if(curId && curId < REVIEW_START_MONTH){ toast('이 달은 룰렛 결과만 확인 가능합니다'); return; }
   const a=currentAttendees();
   if(spinning) return;
   if(a.length<1){ toast('관람자가 없습니다'); return; }
@@ -2472,13 +2593,15 @@ function commitWinnerDisplay(m, saveResult=false){
 }
 function renderReviewerBoard(){
   const b=document.getElementById('reviewerBoard'); if(!b||!cur) return; b.innerHTML='';
+  // 신 시스템: reviewOrderUI가 모두 담당 — 보드는 숨김
+  if(isNewReviewSystem()){ b.style.display='none'; return; }
+  b.style.display='';
+
   if(!cur.movies.length){b.innerHTML='<div class="empty">상영작이 없습니다.</div>';return;}
-  // 비관리자: 보드는 항상 빈값 (스핀 후 팝업으로만 확인)
   if(!isAdmin()){
     b.innerHTML='<div class="rb-none" style="padding:4px 0;">영화를 선택하고 룰렛을 돌려보세요!</div>';
     return;
   }
-  // 관리자: 공개된 당첨자 표시
   let hasAny=false;
   cur.movies.forEach(mv=>{
     const attendees=Object.values(cur.records).filter(r=>r.attending&&r.movieId===mv.id).length;
