@@ -844,6 +844,23 @@ let curId = null;
 let library = [];
 
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+
+// 이미지 업로드 전 압축 (max 1024px, JPEG 72%) — Firebase 10MB 제한 대응
+function compressImage(dataUrl){
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>{
+      const MAX=1024;
+      let w=img.width, h=img.height;
+      if(w>MAX||h>MAX){ if(w>h){h=Math.round(h*MAX/w);w=MAX;}else{w=Math.round(w*MAX/h);h=MAX;} }
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      resolve(c.toDataURL('image/jpeg',0.72));
+    };
+    img.onerror=()=>resolve(dataUrl);
+    img.src=dataUrl;
+  });
+}
 const KEY_MEMBERS='cns-members', KEY_INDEX='cns-month-index', KEY_VER='cns-schema-version';
 const KEY_LIBRARY='cns-library';
 const KEY_SLACK='cns-slack-webhook';
@@ -1934,7 +1951,10 @@ function syncPartyExpFromReceipts(memberId){
 
 function viewReceiptsForMember(memberId){
   const m=members.find(x=>x.id===memberId); if(!m) return;
-  const receipts=(cur.finance?.memberReceipts||{})[memberId]||[];
+  // 신형(memberReceipts) + 구형(receipts) 합산 — 구형은 읽기 전용으로 표시
+  const newRecs=(cur.finance?.memberReceipts||{})[memberId]||[];
+  const oldRecs=(cur.finance?.receipts||[]).filter(r=>r.memberId===memberId).map(r=>({...r,_legacy:true}));
+  const receipts=[...newRecs,...oldRecs];
   const admin=isAdmin();
   const myId = currentUser?.memberId;
   const canUpload=admin||(myId===memberId);
@@ -1946,12 +1966,12 @@ function viewReceiptsForMember(memberId){
       const date=r.uploadedAt?new Date(r.uploadedAt).toLocaleDateString('ko-KR'):'';
       const typeLabel=r.type==='afterparty'?'뒷풀이비':r.type==='snack'?'간식':'기타';
       const dlBtn=r.image
-        ?`<a href="${r.image}" download="${esc(m.name)}_영수증_${i+1}.jpg" style="display:inline-flex;align-items:center;gap:4px;background:var(--sepia);color:#fff;padding:4px 10px;border-radius:3px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;">⬇ 다운로드</a>`
+        ?`<a href="${r.image}" download="${r.amount}-${esc(m.name)}.jpg" style="display:inline-flex;align-items:center;gap:4px;background:var(--sepia);color:#fff;padding:4px 10px;border-radius:3px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;">⬇ 다운로드</a>`
         :'';
-      const editBtn=canDelete
+      const editBtn=(canDelete && !r._legacy)
         ?`<button class="btn xs ghost edit-receipt-btn" data-rid="${r.id}" style="padding:3px 8px;font-size:11px;">✏️ 수정</button>`
         :'';
-      const delBtn=canDelete
+      const delBtn=(canDelete && !r._legacy)
         ?`<button class="btn xs ghost del-receipt-btn" data-rid="${r.id}" style="color:var(--burgundy);border-color:var(--burgundy);padding:3px 8px;font-size:11px;">🗑 삭제</button>`
         :'';
       return `<div style="border:1px solid var(--line2);border-radius:4px;overflow:hidden;margin-bottom:12px;">
@@ -2052,13 +2072,18 @@ function uploadReceiptForMember(memberId){
       entries.push({dataUrl:filesData[i],amount:amt,type:item.querySelector('.r-type').value,desc:item.querySelector('.r-desc').value.trim()});
     });
     if(!allValid){toast('모든 영수증의 금액을 입력하세요');return false;}
+    toast('이미지 압축 중…');
+    const compressed = await Promise.all(entries.map(e=>compressImage(e.dataUrl)));
     if(!cur.finance.memberReceipts) cur.finance.memberReceipts={};
     if(!cur.finance.memberReceipts[memberId]) cur.finance.memberReceipts[memberId]=[];
-    entries.forEach(e=>{
-      cur.finance.memberReceipts[memberId].push({id:uid(),image:e.dataUrl,amount:e.amount,type:e.type,description:e.desc,uploadedAt:new Date().toISOString(),settled:false});
+    entries.forEach((e,i)=>{
+      cur.finance.memberReceipts[memberId].push({id:uid(),image:compressed[i],amount:e.amount,type:e.type,description:e.desc,uploadedAt:new Date().toISOString(),settled:false});
     });
     syncPartyExpFromReceipts(memberId);
-    await saveMonth();renderFinance();toast(`영수증 ${entries.length}장이 업로드되었습니다.`);
+    const ok = await saveMonth();
+    if(!ok){ entries.forEach(()=>cur.finance.memberReceipts[memberId].pop()); syncPartyExpFromReceipts(memberId); return false; }
+    renderFinance();
+    toast(`영수증 ${entries.length}장이 업로드되었습니다.`);
     notifyReceiptUpload(m.name, entries);
   },'업로드','primary');
   document.getElementById('receiptFile').onchange=(e)=>{
