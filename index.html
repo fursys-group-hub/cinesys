@@ -2030,6 +2030,13 @@ function viewReceiptsForMember(memberId){
                </select></div>
              </div>
              <div class="field"><label>설명 (선택)</label><input id="editRdesc" type="text" value="${esc(r.description||'')}" style="width:100%;"></div>
+             <div class="field">
+               <label>이미지 교체 (선택)</label>
+               <input id="editRfile" type="file" accept="image/*" style="width:100%;" onchange="(f=>{if(!f)return;const fr=new FileReader();fr.onload=e=>{const p=document.getElementById('editRpreview');const i=document.getElementById('editRpreviewImg');if(p&&i){i.src=e.target.result;p.style.display='block';}};fr.readAsDataURL(f);})(this.files[0])">
+               <div id="editRpreview" style="margin-top:8px;display:${r.image?'block':'none'};">
+                 <img id="editRpreviewImg" src="${r.image||''}" style="max-width:100%;max-height:160px;object-fit:contain;border:1px solid var(--line2);border-radius:3px;display:block;">
+               </div>
+             </div>
            </div>`,
           async()=>{
             const amt=getNumVal(document.getElementById('editRamt'));
@@ -2037,8 +2044,15 @@ function viewReceiptsForMember(memberId){
             r.amount=amt;
             r.type=document.getElementById('editRtype').value;
             r.description=document.getElementById('editRdesc').value.trim();
+            const file=document.getElementById('editRfile').files[0];
+            if(file){
+              toast('이미지 압축 중…');
+              const raw=await new Promise(res=>{const fr=new FileReader();fr.onload=e=>res(e.target.result);fr.readAsDataURL(file);});
+              r.image=await compressImage(raw);
+            }
             syncPartyExpFromReceipts(memberId);
-            await saveMonth();
+            const ok=await saveMonth();
+            if(!ok){toast('저장에 실패했습니다');return false;}
             renderFinance();
             viewReceiptsForMember(memberId);
             toast('영수증이 수정됐습니다 ✓');
