@@ -2223,14 +2223,15 @@ function renderSettlementDetail(){
   (cur.movies||[]).forEach(mv => { movieTitleMap[mv.id] = mv.title; });
 
   const screeningMap = {};
+  // movieTime이 null/undefined일 수 있으므로 ||'' 로 정규화
   Object.entries(cur.records||{}).forEach(([memberId, rec]) => {
     if(!rec.attending || !rec.movieId) return;
-    const key = `${rec.movieId}|${rec.movieTime}`;
+    const key = `${rec.movieId}|${rec.movieTime||''}`;
     if(!screeningMap[key]) screeningMap[key] = {memberIds:[], movieCost:0};
     screeningMap[key].memberIds.push(memberId);
   });
   (cur.finance?.movieCosts||[]).forEach(mc => {
-    const key = `${mc.movieId}|${mc.movieTime}`;
+    const key = `${mc.movieId}|${mc.movieTime||''}`;
     if(!screeningMap[key]) screeningMap[key] = {memberIds:[], movieCost:0};
     screeningMap[key].movieCost = mc.amount || 0;
   });
