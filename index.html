@@ -1077,7 +1077,19 @@ async function init(){
 async function loadMonth(id){
   curId=id;
   cur = monthCache[id] || await sGet(mKey(id), null);
-  if(cur){ cur.finance = migrateFinance(cur.finance); if(cur.confirmed===undefined) cur.confirmed=false; if(!cur.prevMonthExclusions) cur.prevMonthExclusions=[]; if(!cur.revealed) cur.revealed={}; if(cur.movies) cur.movies.forEach(mv=>{if(!mv.times) mv.times=mv.time?[mv.time]:[];}); if(cur.records) Object.values(cur.records).forEach(r=>{if(r.movieTime===undefined) r.movieTime=null;}); fixCombinedTimes(cur); monthCache[id]=cur; }
+  if(cur){
+    const prevCostLen = (cur.finance?.movieCosts||[]).length;
+    cur.finance = migrateFinance(cur.finance);
+    if(cur.confirmed===undefined) cur.confirmed=false;
+    if(!cur.prevMonthExclusions) cur.prevMonthExclusions=[];
+    if(!cur.revealed) cur.revealed={};
+    if(cur.movies) cur.movies.forEach(mv=>{if(!mv.times) mv.times=mv.time?[mv.time]:[];});
+    if(cur.records) Object.values(cur.records).forEach(r=>{if(r.movieTime===undefined) r.movieTime=null;});
+    fixCombinedTimes(cur);
+    monthCache[id]=cur;
+    // 중복 제거로 항목 수가 줄었으면 Firebase에 바로 저장
+    if(cur.finance.movieCosts.length < prevCostLen) await sSet(mKey(id), cur);
+  }
   buildMonthSelect();
   renderAll();
 }
