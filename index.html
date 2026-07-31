@@ -970,10 +970,10 @@ function migrateFinance(f){
   }
   // 구버전 항목에 movieTime 추가
   f.movieCosts.forEach(c=>{ if(c.movieTime===undefined) c.movieTime=null; });
-  // movieTime null/'' 불일치로 생긴 중복 제거 — 같은 movieId+movieTime(정규화)은 마지막 값만 유지
-  const _costMap = {};
-  f.movieCosts.forEach(c=>{ _costMap[`${c.movieId}|${c.movieTime||''}`] = c; });
-  f.movieCosts = Object.values(_costMap);
+  // movieTime null 유령 항목 제거:
+  // 같은 영화에 특정 시간대 항목이 있으면 null/'' 항목은 이전 입력의 잔재 → 제거
+  const _moviesWithTime = new Set(f.movieCosts.filter(c=>c.movieTime).map(c=>c.movieId));
+  f.movieCosts = f.movieCosts.filter(c=>c.movieTime||!_moviesWithTime.has(c.movieId));
   if(f.perPerson===undefined) f.perPerson=30000;
   if(f.partyExpenses===undefined){
     f.partyExpenses = {};
@@ -1867,7 +1867,12 @@ function renderMovieCosts(){
       const movieTime = row.dataset.time;
       input.onchange = ()=>{
         const amt = getNumVal(input);
-        cur.finance.movieCosts = (cur.finance.movieCosts||[]).filter(c=>!(c.movieId===movieId&&(c.movieTime||'')===movieTime));
+        cur.finance.movieCosts = (cur.finance.movieCosts||[]).filter(c=>{
+          if(c.movieId!==movieId) return true;
+          if((c.movieTime||'')===movieTime) return false; // 같은 슬롯 제거
+          if(movieTime && !c.movieTime) return false;     // null 유령 항목도 제거
+          return true;
+        });
         if(amt>0) cur.finance.movieCosts.push({id:uid(),movieId,movieTime,amount:amt});
         saveMonth(); renderFinance();
       };
