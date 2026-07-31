@@ -809,6 +809,7 @@ function reEvalAuth(){
     renderConfirmSection();
     renderFinance();
     renderReviewerBoard();
+    renderActivity(); renderMembers(); renderLibrary();
     return;
   }
   const admin = isAdmin();
@@ -824,6 +825,8 @@ function reEvalAuth(){
   renderConfirmSection();
   renderFinance();
   renderReviewerBoard();
+  // 권한이 바뀌면 관리자 전용 버튼이 있는 화면도 다시 그려야 함
+  renderActivity(); renderMembers(); renderLibrary();
 }
 
 const SCHEMA_VERSION = 2;
@@ -970,10 +973,10 @@ function migrateFinance(f){
   }
   // 구버전 항목에 movieTime 추가
   f.movieCosts.forEach(c=>{ if(c.movieTime===undefined) c.movieTime=null; });
-  // movieTime null 유령 항목 제거:
-  // 같은 영화에 특정 시간대 항목이 있으면 null/'' 항목은 이전 입력의 잔재 → 제거
-  const _moviesWithTime = new Set(f.movieCosts.filter(c=>c.movieTime).map(c=>c.movieId));
-  f.movieCosts = f.movieCosts.filter(c=>c.movieTime||!_moviesWithTime.has(c.movieId));
+  // 완전히 동일한 슬롯(movieId+movieTime)이 중복 저장된 경우만 마지막 값 유지
+  const _costMap={};
+  f.movieCosts.forEach(c=>{ _costMap[`${c.movieId}|${c.movieTime||''}`]=c; });
+  f.movieCosts = Object.values(_costMap);
   if(f.perPerson===undefined) f.perPerson=30000;
   if(f.partyExpenses===undefined){
     f.partyExpenses = {};
@@ -998,14 +1001,31 @@ function migrateFinance(f){
    record.movieTime이 현재 상영시간 목록에 없는 "16:50(소파). 17:40(소파)" 꼴이면 첫 시간으로 되돌림 */
 function fixCombinedTimes(mo){
   if(!mo || !mo.records || !mo.movies) return;
+  const firstValidTime=(movieId,time)=>{
+    const mv=mo.movies.find(m=>m.id===movieId);
+    if(!mv || !(mv.times||[]).length) return null;
+    if(mv.times.includes(time)) return time;
+    const first=String(time).split(/\.\s+/)[0].trim();
+    return (first && mv.times.includes(first)) ? first : null;
+  };
   Object.values(mo.records).forEach(r=>{
     if(!r.movieId || !r.movieTime) return;
-    const mv=mo.movies.find(m=>m.id===r.movieId);
-    if(!mv || !(mv.times||[]).length) return;
-    if(mv.times.includes(r.movieTime)) return;
-    const first=r.movieTime.split(/\.\s+/)[0].trim();
-    if(first && mv.times.includes(first)) r.movieTime=first;
+    const fixed=firstValidTime(r.movieId,r.movieTime);
+    if(fixed) r.movieTime=fixed;
   });
+  // 영화비 항목의 시간도 동일하게 교정 — 교정 결과가 기존 항목과 겹치면 중복 제거
+  if(mo.finance && Array.isArray(mo.finance.movieCosts)){
+    const seen=new Set();
+    mo.finance.movieCosts = mo.finance.movieCosts.filter(c=>{
+      if(c.movieId && c.movieTime){
+        const fixed=firstValidTime(c.movieId,c.movieTime);
+        if(fixed) c.movieTime=fixed;
+      }
+      const key=`${c.movieId}|${c.movieTime||''}`;
+      if(seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+  }
 }
 
 /* ============== Init ============== */
@@ -1087,7 +1107,7 @@ async function loadMonth(id){
     if(cur.records) Object.values(cur.records).forEach(r=>{if(r.movieTime===undefined) r.movieTime=null;});
     fixCombinedTimes(cur);
     monthCache[id]=cur;
-    // 중복 제거로 항목 수가 줄었으면 Firebase에 바로 저장
+    // 동일 슬롯 중복이 정리됐으면 Firebase에도 반영
     if(cur.finance.movieCosts.length < prevCostLen) await sSet(mKey(id), cur);
   }
   buildMonthSelect();
@@ -1737,7 +1757,25 @@ function activeMembers(){ return members.filter(m=>!m.leaveDate); }
 function attendees(){ return members.filter(m=>cur.records[m.id]&&cur.records[m.id].attending); }
 function partyAttendees(){ return members.filter(m=>cur.records[m.id]&&cur.records[m.id].attending&&cur.records[m.id].afterparty); }
 function calcSubsidy(){ return (Number(cur.finance.perPerson)||30000)*attendees().length; }
-function calcMovieTotal(){ return (cur.finance.movieCosts||[]).reduce((s,it)=>s+(Number(it.amount)||0),0); }
+/* 실제 참석자가 있는 상영 슬롯 키 집합 — 영화비 표에 렌더되는 행과 동일 기준 */
+function movieCostSlotKeys(){
+  const keys=new Set();
+  if(!cur||!cur.movies) return keys;
+  Object.values(cur.records||{}).forEach(r=>{
+    if(!r.attending||!r.movieId) return;
+    if(!cur.movies.some(mv=>mv.id===r.movieId)) return;
+    keys.add(`${r.movieId}|${r.movieTime||''}`);
+  });
+  return keys;
+}
+/* 표에 보이지 않는 유령 항목(참석자가 빠진 슬롯 등)은 합산에서 제외 */
+function calcMovieTotal(){
+  const valid=movieCostSlotKeys();
+  return (cur.finance.movieCosts||[]).reduce((s,it)=>{
+    if(!it.movieId) return s+(Number(it.amount)||0); // 구버전 통합 기록은 그대로 반영
+    return valid.has(`${it.movieId}|${it.movieTime||''}`) ? s+(Number(it.amount)||0) : s;
+  },0);
+}
 function calcPartyTotal(){
   const pa = attendees();
   let total = 0;
