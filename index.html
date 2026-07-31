@@ -970,6 +970,10 @@ function migrateFinance(f){
   }
   // 구버전 항목에 movieTime 추가
   f.movieCosts.forEach(c=>{ if(c.movieTime===undefined) c.movieTime=null; });
+  // movieTime null/'' 불일치로 생긴 중복 제거 — 같은 movieId+movieTime(정규화)은 마지막 값만 유지
+  const _costMap = {};
+  f.movieCosts.forEach(c=>{ _costMap[`${c.movieId}|${c.movieTime||''}`] = c; });
+  f.movieCosts = Object.values(_costMap);
   if(f.perPerson===undefined) f.perPerson=30000;
   if(f.partyExpenses===undefined){
     f.partyExpenses = {};
