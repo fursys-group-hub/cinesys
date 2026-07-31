@@ -183,6 +183,37 @@
   .cost-total .lbl{font-family:'Noto Serif KR',serif;font-weight:700;font-size:13.5px;color:var(--ink);}
   .cost-total .amount{font-family:'Playfair Display',serif;font-size:20px;color:var(--sepia-hi);font-weight:700;letter-spacing:-.3px;}
 
+  /* settlement detail */
+  .stl-tbl td,.stl-tbl th{vertical-align:top;}
+  .stl-tbl th.n,.stl-tbl td.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .stl-tbl th.mvh{width:1%;}
+  .stl-tbl td.mv{width:1%;white-space:nowrap;font-size:11.5px;color:var(--ink3);line-height:1.45;}
+  .stl-tbl td.nm{white-space:nowrap;font-weight:500;}
+  .stl-tbl .grp{font-size:10.5px;color:var(--ink3);font-weight:400;margin-top:2px;}
+  .stl-tbl th.allow,.stl-tbl td.allow{background:rgba(90,138,74,.08);}
+  .stl-tbl td.allow{font-weight:600;}
+  .stl-tbl th.dep,.stl-tbl td.dep{background:rgba(184,133,79,.11);}
+  .stl-tbl td.dep{font-weight:700;color:var(--sepia-hi);}
+  .stl-tbl td.dep input{width:88px;text-align:right;font-weight:700;color:var(--sepia-hi);
+    font-variant-numeric:tabular-nums;padding:4px 7px;font-size:12.5px;}
+  .stl-tbl tr.sum td{border-top:2px solid var(--sepia-dim);font-weight:700;padding-top:11px;background:var(--paper2);}
+  .stl-tbl tr.sum td.allow{background:rgba(90,138,74,.16);}
+  .stl-tbl tr.sum td.dep{background:rgba(184,133,79,.2);}
+  .stl-tag{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:3px;font-weight:600;white-space:nowrap;}
+  .stl-tag.over{background:rgba(139,58,58,.1);color:var(--burgundy);}
+  .stl-tag.left{background:rgba(90,138,74,.12);color:var(--sage);}
+  .stl-tag.zero{background:var(--paper2);color:var(--ink3);}
+  .stl-vf{margin-top:14px;border:1.5px solid var(--sepia-dim);border-radius:5px;padding:14px 16px;background:var(--paper2);}
+  .stl-vf.ok{border-color:#c1d4b8;background:rgba(90,138,74,.08);}
+  .stl-vf.bad{border-color:rgba(139,58,58,.35);background:rgba(139,58,58,.06);}
+  .stl-vf .vt{font-weight:700;font-size:13px;margin-bottom:10px;}
+  .stl-vf .vrow{display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13px;color:var(--ink2);}
+  .stl-vf .vrow b{font-variant-numeric:tabular-nums;color:var(--ink);}
+  .stl-vf .vrow.tot{border-top:1px solid var(--line2);margin-top:4px;padding-top:9px;}
+  .stl-vf .vrow.tot b{font-size:17px;}
+  .stl-vf .vnote{margin-top:9px;font-size:11.5px;color:var(--ink3);line-height:1.65;}
+  .stl-vf .vacts{margin-top:11px;display:flex;gap:7px;flex-wrap:wrap;}
+
   /* callout */
   .callout{background:linear-gradient(135deg,rgba(184,133,79,.10),rgba(184,133,79,.02));border:1px solid var(--sepia-dim);border-radius:4px;padding:16px 20px;margin-top:14px;}
   .callout .ct{font-family:'Noto Serif KR',serif;font-weight:700;font-size:14.5px;color:var(--sepia-hi);margin-bottom:6px;}
@@ -531,10 +562,11 @@
 
     <div class="panel">
       <h2><span class="ic">💰</span> 정산 세부 내역</h2>
-      <div class="desc">지원금(1인 30,000원) 내에서만 정산합니다. <strong>간식 허용 금액 = 지원금 − 영화비</strong>. 정산금이 음수(−)이면 회원이 총무에게 납부해야 합니다.</div>
+      <div class="desc"><strong>간식 허용 = 지원금 − 영화비</strong>. <strong>실제 입금액</strong>은 총무가 직접 조정할 수 있습니다 — 잔여가 남은 회원의 여유분을 초과한 회원에게 배분해 <strong>영화비 + 입금액 합계</strong>를 목표액에 맞추세요.</div>
       <div class="scroll">
         <table class="tbl" id="settlementDetailTbl"></table>
       </div>
+      <div id="settlementVerify"></div>
     </div>
   </section>
 
@@ -984,6 +1016,7 @@ function migrateFinance(f){
       // 이전 총액은 보존이 어려워 안내만 (사용자가 다시 입력)
     }
   }
+  if(f.deposits===undefined) f.deposits = {}; // 총무가 조정한 실제 입금액 {payerId: 금액}
   if(f.excessPayments===undefined){
     f.excessPayments = {};
     // 이전 payments 구조에서 deposited 가져오기
@@ -1856,12 +1889,8 @@ function renderFinOverview(){
     callout.innerHTML = `<div class="callout"><div class="ct">📝 영화비·간식비를 입력해 주세요</div><div class="cb">아래 항목을 입력하면 정산이 자동으로 계산됩니다.</div></div>`;
   } else if(diff<=0){
     callout.innerHTML = `<div class="callout good"><div class="ct">✓ 추가 정산 없음</div><div class="cb">지원금이 총 지출보다 ${fmt(-diff)}원 많습니다.</div></div>`;
-  } else if(partyPpl.length===0){
-    callout.innerHTML = `<div class="callout warn"><div class="ct">⚠ 뒷풀이 참석자 없음</div><div class="cb">초과액 ${fmt(diff)}원이지만 뒷풀이 참석자가 없어 정산 대상이 없어요.</div></div>`;
   } else {
-    const treasurer = members.find(m=>m.role==='총무');
-    const treasurerName = treasurer ? `<b style="color:var(--sepia)">${esc(treasurer.name)}</b> 총무님` : '총무';
-    callout.innerHTML = `<div class="callout warn"><div class="ct">⚠ 정산 세부 내역 확인 필요</div><div class="cb">초과 <b style="color:var(--burgundy)">${fmt(diff)}원</b> → 뒷풀이 ${partyPpl.length}명이 <b style="color:var(--burgundy)">1인당 ${fmt(shareEach)}원</b>씩 ${treasurerName}에게 입금합니다.</div></div>`;
+    callout.innerHTML = `<div class="callout warn"><div class="ct">⚠ 지원금 초과 — 입금액 조정 필요</div><div class="cb">총 지출이 지원금보다 <b style="color:var(--burgundy)">${fmt(diff)}원</b> 많습니다. 집행은 <b>지원금 ${fmt(subsidy)}원</b> 한도까지만 하고 초과분은 회원 자기부담입니다.<br>아래 <b>정산 세부 내역</b>에서 잔여가 남은 회원의 여유분을 초과한 회원에게 배분해 주세요.</div></div>`;
   }
 }
 
@@ -2269,13 +2298,9 @@ function renderReceipts(){
   }
 }
 
-function renderSettlementDetail(){
-  const tbl = document.getElementById('settlementDetailTbl');
-  if(!cur || !members || !members.length){
-    tbl.innerHTML = '<tbody><tr><td><div class="empty">데이터 로딩 중...</div></td></tr></tbody>';
-    return;
-  }
-
+/* 정산 행 + 목표액 계산 (렌더와 자동배분이 공유) */
+function settlementData(){
+  if(!cur || !members || !members.length) return null;
   const subsidyPer = cur.finance?.perPerson || 30000;
 
   const movieTitleMap = {};
@@ -2320,31 +2345,13 @@ function renderSettlementDetail(){
     }
   });
 
-  const sortedMembers = [...members].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
-
-  // 열 너비 힌트: 숫자 열은 오른쪽 정렬
-  const RAL = 'style="text-align:right"';
-  const ALLOW_BG = 'style="text-align:right;background:rgba(90,138,74,.07)"';
-  const ALLOW_TH = 'style="text-align:right;background:rgba(90,138,74,.12)"';
-
-  let h = `<thead><tr>
-    <th>회원명</th>
-    <th>관람 영화</th>
-    <th ${RAL}>지원금</th>
-    <th ${RAL}>영화비</th>
-    <th ${ALLOW_TH}>간식<br>허용 금액</th>
-    <th ${RAL}>실제<br>간식비</th>
-    <th ${RAL}>정산금</th>
-  </tr></thead><tbody>`;
-
-  let sumSubsidy=0, sumMovie=0, sumAllow=0, sumSnack=0, sumSettle=0, rowCount=0;
-
-  sortedMembers.forEach(m => {
+  const rows = [];
+  [...members].sort((a,b)=>a.name.localeCompare(b.name,'ko')).forEach(m => {
     if(coveredByPayer[m.id]) return;
 
     const snack = partyExpenses[m.id]?.amount || 0;
     let movieCost = memberMovieCost[m.id] || 0;
-    let effectiveTitles = [...(memberTitles[m.id]||[])];
+    let titles = [...(memberTitles[m.id]||[])];
     let groupCount = 1;
     let managedNames = [];
 
@@ -2353,68 +2360,195 @@ function renderSettlementDetail(){
       groupCount = managed.length;
       managedNames = managed.map(id => members.find(x=>x.id===id)?.name).filter(Boolean);
       movieCost = managed.reduce((sum, mid) => sum + (memberMovieCost[mid]||0), 0);
-      const allTitles = [];
-      managed.forEach(mid => { (memberTitles[mid]||[]).forEach(t => { if(!allTitles.includes(t)) allTitles.push(t); }); });
-      effectiveTitles = allTitles;
+      const all = [];
+      managed.forEach(mid => { (memberTitles[mid]||[]).forEach(t => { if(!all.includes(t)) all.push(t); }); });
+      titles = all;
     }
 
-    const hasData = movieCost > 0 || snack > 0;
-    if(!hasData) return;
+    if(movieCost <= 0 && snack <= 0) return;
 
-    const subsidy      = groupCount * subsidyPer;
-    const snackAllow   = subsidy - movieCost;        // 간식 허용 금액
-    const settle       = snackAllow - snack;          // 정산금
+    const subsidy = groupCount * subsidyPer;
+    rows.push({
+      id:m.id, name:m.name, groupCount, managedNames, titles,
+      subsidy, movieCost, allow: subsidy - movieCost, snack
+    });
+  });
 
-    sumSubsidy += subsidy; sumMovie += movieCost;
-    sumAllow   += snackAllow; sumSnack += snack; sumSettle += settle;
-    rowCount++;
+  const sumSubsidy = rows.reduce((s,r)=>s+r.subsidy,0);
+  const sumMovie   = rows.reduce((s,r)=>s+r.movieCost,0);
+  const sumAllow   = rows.reduce((s,r)=>s+r.allow,0);
+  const sumSnack   = rows.reduce((s,r)=>s+r.snack,0);
 
-    const allowColor  = snackAllow < 0 ? 'color:var(--burgundy)' : '';
-    const settleColor = settle < 0 ? 'color:var(--burgundy);font-weight:700'
-                      : settle > 0 ? 'color:var(--sage);font-weight:700'
-                      : 'color:var(--ink3)';
-    const settleText  = settle === 0 ? '—'
-      : settle < 0 ? `−${fmt(Math.abs(settle))}원`
-      : `+${fmt(settle)}원`;
-    const settleTag   = settle < 0
-      ? `<div style="font-size:10px;color:var(--burgundy);margin-top:1px">납부 필요</div>` : '';
+  // 지원금 이내면 실지출 전액 집행, 초과하면 지원금 한도까지만 집행
+  const withinBudget = (sumMovie + sumSnack) <= sumSubsidy;
+  const targetTotal   = withinBudget ? sumMovie + sumSnack : sumSubsidy; // 영화비 + 입금액 목표 합계
+  const targetDeposit = targetTotal - sumMovie;                           // 입금액 목표 합계
 
-    const titleText   = effectiveTitles.map(t=>`🎬 ${esc(t)}`).join('<br>') || '—';
-    const namesLabel  = managedNames.length > 1
-      ? `<div style="font-size:10px;color:var(--ink3);margin-top:2px">${groupCount}명 담당 (${managedNames.join(', ')})</div>`
-      : '';
+  // 실제 입금액: 총무가 저장한 값이 있으면 그 값, 없으면 기본값
+  const saved = cur.finance?.deposits || {};
+  rows.forEach(r => {
+    r.defaultDep = withinBudget ? r.snack : Math.max(0, Math.min(r.snack, r.allow));
+    const v = saved[r.id];
+    r.edited = (v !== undefined && v !== null && v !== '');
+    r.dep = r.edited ? Math.max(0, Number(v)||0) : r.defaultDep;
+  });
+
+  const sumDep = rows.reduce((s,r)=>s+r.dep,0);
+  return {rows, sumSubsidy, sumMovie, sumAllow, sumSnack, sumDep,
+          withinBudget, targetTotal, targetDeposit};
+}
+
+/* 잔여 예산을 초과 회원에게 초과액 비례로 배분 */
+function autoDistributeDeposits(){
+  const d = settlementData();
+  if(!d) return;
+  let pool = d.targetDeposit - d.sumDep;
+  if(pool <= 0){ toast('배분할 잔여 예산이 없습니다'); return; }
+  const need = d.rows.map(r=>({r, gap: Math.max(0, r.snack - r.dep)})).filter(x=>x.gap>0);
+  if(!need.length){ toast('추가 입금이 필요한 회원이 없습니다'); return; }
+
+  const totalGap = need.reduce((s,x)=>s+x.gap,0);
+  const give = Math.min(pool, totalGap);
+  let left = give;
+  cur.finance.deposits = cur.finance.deposits || {};
+  need.forEach((x,i)=>{
+    let amt = (i === need.length-1) ? left : Math.round(give * x.gap / totalGap);
+    amt = Math.max(0, Math.min(amt, x.gap, left));
+    left -= amt;
+    cur.finance.deposits[x.r.id] = x.r.dep + amt;
+  });
+  saveMonth(); renderFinance();
+  toast(`잔여 ${fmt(give)}원을 초과 회원에게 배분했습니다 ✓`);
+}
+
+function resetDeposits(){
+  if(!cur) return;
+  cur.finance.deposits = {};
+  saveMonth(); renderFinance();
+  toast('입금액을 기본값으로 되돌렸습니다');
+}
+
+function renderSettlementDetail(){
+  const tbl = document.getElementById('settlementDetailTbl');
+  const vf  = document.getElementById('settlementVerify');
+  if(!tbl) return;
+  const d = settlementData();
+  if(!d){
+    tbl.innerHTML = '<tbody><tr><td><div class="empty">데이터 로딩 중...</div></td></tr></tbody>';
+    if(vf) vf.innerHTML = '';
+    return;
+  }
+  const {rows, sumSubsidy, sumMovie, sumAllow, sumSnack, sumDep,
+         withinBudget, targetTotal, targetDeposit} = d;
+  const admin = isAdmin();
+
+  tbl.className = 'tbl stl-tbl';
+  let h = `<thead><tr>
+    <th>회원명</th>
+    <th class="mvh">영화</th>
+    <th class="n">지원금</th>
+    <th class="n">영화비</th>
+    <th class="n allow">간식 허용</th>
+    <th class="n">실제 간식비</th>
+    <th class="n dep">실제 입금액</th>
+    <th>비고</th>
+  </tr></thead><tbody>`;
+
+  rows.forEach(r => {
+    const own   = r.snack - r.dep;        // 자기부담
+    const extra = r.dep  - r.allow;       // 허용 초과 배분분
+    const left  = r.allow - r.snack;      // 미사용 예산
+    const tag = own > 0   ? `<span class="stl-tag over">자기부담 ${fmt(own)}</span>`
+              : extra > 0 ? `<span class="stl-tag over" style="background:rgba(184,133,79,.14);color:var(--sepia-hi)">추가배분 +${fmt(extra)}</span>`
+              : left > 0  ? `<span class="stl-tag left">잔여 ${fmt(left)}</span>`
+              : `<span class="stl-tag zero">정확</span>`;
+
+    const titleText = r.titles.length
+      ? r.titles.map(t=>esc(t.length>7 ? t.slice(0,7)+'…' : t)).join('<br>')
+      : '—';
+    const grp = r.managedNames.length > 1
+      ? `<div class="grp">${r.groupCount}명 · ${r.managedNames.map(esc).join(', ')}</div>` : '';
+
+    const depCell = admin
+      ? `<input type="text" inputmode="numeric" data-act="dep" data-id="${esc(r.id)}"
+           value="${fmt(r.dep)}" oninput="fmtNumInput(this)" title="최대 ${fmt(r.snack)}원">`
+      : `${fmt(r.dep)}원`;
 
     h += `<tr>
-      <td style="font-weight:500">${esc(m.name)}${namesLabel}</td>
-      <td style="font-size:12px;color:var(--ink3)">${titleText}</td>
-      <td ${RAL}>${fmt(subsidy)}원</td>
-      <td ${RAL}>${movieCost > 0 ? fmt(movieCost)+'원' : '—'}</td>
-      <td style="text-align:right;background:rgba(90,138,74,.07);font-weight:600;${allowColor}">${fmt(snackAllow)}원</td>
-      <td ${RAL}>${snack > 0 ? fmt(snack)+'원' : '—'}</td>
-      <td style="text-align:right;${settleColor}">${settleText}${settleTag}</td>
+      <td class="nm">${esc(r.name)}${grp}</td>
+      <td class="mv" title="${esc(r.titles.join(', '))}">${titleText}</td>
+      <td class="n">${fmt(r.subsidy)}</td>
+      <td class="n">${r.movieCost > 0 ? fmt(r.movieCost) : '—'}</td>
+      <td class="n allow"${r.allow<0?' style="color:var(--burgundy)"':''}>${fmt(r.allow)}</td>
+      <td class="n">${r.snack > 0 ? fmt(r.snack) : '—'}</td>
+      <td class="n dep">${depCell}</td>
+      <td>${tag}</td>
     </tr>`;
   });
 
-  // 합계 행
-  if(rowCount > 1){
-    const sTotalColor = sumSettle < 0 ? 'color:var(--burgundy);font-weight:700'
-                       : sumSettle > 0 ? 'color:var(--sage);font-weight:700'
-                       : 'color:var(--ink3)';
-    const sTotalText  = sumSettle === 0 ? '—'
-      : sumSettle < 0 ? `−${fmt(Math.abs(sumSettle))}원`
-      : `+${fmt(sumSettle)}원`;
-    h += `<tr style="border-top:2px solid var(--sepia-dim);background:var(--paper2);">
-      <td colspan="2" style="font-weight:700;font-size:12px;color:var(--ink2);padding-top:10px">합 계</td>
-      <td ${RAL} style="font-weight:600">${fmt(sumSubsidy)}원</td>
-      <td ${RAL} style="font-weight:600">${sumMovie > 0 ? fmt(sumMovie)+'원' : '—'}</td>
-      <td style="text-align:right;background:rgba(90,138,74,.12);font-weight:700">${fmt(sumAllow)}원</td>
-      <td ${RAL} style="font-weight:600">${sumSnack > 0 ? fmt(sumSnack)+'원' : '—'}</td>
-      <td style="text-align:right;${sTotalColor}">${sTotalText}</td>
+  if(rows.length > 1){
+    h += `<tr class="sum">
+      <td colspan="2">합 계</td>
+      <td class="n">${fmt(sumSubsidy)}</td>
+      <td class="n">${fmt(sumMovie)}</td>
+      <td class="n allow">${fmt(sumAllow)}</td>
+      <td class="n">${fmt(sumSnack)}</td>
+      <td class="n dep">${fmt(sumDep)}</td>
+      <td></td>
     </tr>`;
   }
+  tbl.innerHTML = h + '</tbody>';
 
-  h += '</tbody>';
-  tbl.innerHTML = h;
+  // 입금액 입력 핸들러
+  if(admin){
+    tbl.querySelectorAll('[data-act=dep]').forEach(input=>{
+      const id = input.dataset.id;
+      const row = rows.find(r=>r.id===id);
+      input.onchange = ()=>{
+        let v = getNumVal(input);
+        if(row && v > row.snack){ v = row.snack; toast('실제 간식비보다 많이 입금할 수 없습니다'); }
+        cur.finance.deposits = cur.finance.deposits || {};
+        cur.finance.deposits[id] = Math.max(0, v);
+        saveMonth(); renderFinance();
+      };
+    });
+  }
+
+  if(!vf) return;
+  if(!rows.length){ vf.innerHTML = ''; return; }
+
+  const actual = sumMovie + sumDep;
+  const gap    = targetTotal - actual;
+  const ok     = gap === 0;
+  const acts = admin
+    ? `<div class="vacts">
+         ${gap>0?`<button class="btn sm primary" id="autoDistBtn">잔여 ${fmt(gap)}원 자동 배분</button>`:''}
+         <button class="btn sm ghost" id="resetDepBtn">기본값으로 되돌리기</button>
+       </div>` : '';
+
+  vf.innerHTML = `<div class="stl-vf ${ok?'ok':'bad'}">
+    <div class="vt" style="color:${ok?'var(--sage)':'var(--burgundy)'}">
+      ${ok?'✓ 합계 일치':'⚠ 합계 불일치'} — 영화비 + 실제 입금액
+    </div>
+    <div class="vrow"><span>영화비 합계</span><b>${fmt(sumMovie)}원</b></div>
+    <div class="vrow"><span>실제 입금액 합계</span><b>${fmt(sumDep)}원</b></div>
+    <div class="vrow tot"><span>집행 합계</span>
+      <b style="color:${ok?'var(--sage)':'var(--burgundy)'}">${fmt(actual)}원</b></div>
+    <div class="vrow"><span>목표액 ${withinBudget?'(실지출 · 지원금 이내)':'(지원금 한도)'}</span>
+      <b>${fmt(targetTotal)}원</b></div>
+    ${ok?'':`<div class="vrow"><span>차액</span><b style="color:var(--burgundy)">${gap>0?'+':''}${fmt(gap)}원</b></div>`}
+    <div class="vnote">
+      ${withinBudget
+        ? '총 지출이 지원금 이내라 실제 지출 내역대로 전액 집행합니다.'
+        : `총 지출이 지원금을 초과해 <b>지원금 ${fmt(sumSubsidy)}원</b> 한도까지만 집행합니다. 잔여가 남은 회원의 여유분을 초과한 회원에게 배분해 합계를 맞추세요.`}
+    </div>
+    ${acts}
+  </div>`;
+
+  const ab = document.getElementById('autoDistBtn');
+  if(ab) ab.onclick = autoDistributeDeposits;
+  const rb = document.getElementById('resetDepBtn');
+  if(rb) rb.onclick = resetDeposits;
 }
 
 function renderResultCards(){
