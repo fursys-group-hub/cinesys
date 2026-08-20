@@ -107,6 +107,17 @@
   .pill.no{background:rgba(139,58,58,.10);color:var(--burgundy);}
   .pill.tr{background:rgba(196,161,85,.18);color:var(--sepia-hi);}
   .pill.self{background:var(--cream2);color:var(--ink3);}
+  .pill.xs{font-size:10.5px;padding:2px 7px;}
+
+  /* 내 이름 선택 목록 */
+  .msel-list{max-height:300px;overflow-y:auto;border:1px solid var(--line);border-radius:4px;background:var(--paper);}
+  .msel-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 13px;cursor:pointer;border-bottom:1px solid var(--line);transition:.12s;}
+  .msel-row:last-child{border-bottom:none;}
+  .msel-row:hover{background:var(--paper2);}
+  .msel-row.sel{background:rgba(196,161,85,.15);}
+  .msel-row.sel .msel-name{font-weight:700;color:var(--sepia-hi);}
+  .msel-name{display:inline-flex;align-items:center;gap:6px;font-size:14px;color:var(--ink);}
+  .msel-sub{font-size:11.5px;color:var(--ink3);white-space:nowrap;}
 
   /* role chips */
   .role-chip{font-family:'Montserrat',sans-serif;font-size:11px;letter-spacing:.4px;font-weight:600;padding:3px 9px;border-radius:3px;display:inline-block;white-space:nowrap;}
@@ -664,29 +675,39 @@ function isMember(){
 function showMemberSelect(){
   const list = activeMembers ? activeMembers() : members.filter(m=>m.status!=='탈퇴');
   const sorted = [...list].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
-  const opts = sorted.map(m=>`<option value="${m.id}">${esc(m.name)}${m.company?' ('+esc(m.company)+')':''}</option>`).join('');
   const cur = currentUser ? currentUser.memberId : '';
+  let picked = cur; // 지금 고른 사람
+  const rows = sorted.map(m=>{
+    // 운영진(총무·회장)은 이름 옆에 배지로 구분
+    const badge = (m.role==='총무'||m.role==='회장') ? `<span class="pill tr xs">${esc(m.role)}</span>` : '';
+    return `<div class="msel-row${m.id===cur?' sel':''}" data-id="${m.id}">
+      <span class="msel-name">${esc(m.name)}${badge}</span>
+      ${m.company?`<span class="msel-sub">${esc(m.company)}</span>`:''}
+    </div>`;
+  }).join('');
   openModal('내 이름 선택',
     `<p style="font-size:13.5px;line-height:1.8;margin-bottom:14px;color:var(--ink2);">
        목록에서 본인 이름을 선택하면 이후에도 자동으로 기억됩니다.
      </p>
-     <div class="field"><label>이름</label>
-       <select id="memberSelectDrop" style="width:100%;padding:8px;font-size:14px;">
-         <option value="">— 이름을 선택하세요 —</option>${opts}
-       </select>
-     </div>`,
+     <div class="msel-list" id="memberSelectList">${rows}</div>`,
     ()=>{
-      const id = document.getElementById('memberSelectDrop').value;
-      if(!id){ toast('이름을 선택해주세요'); return false; }
-      const m = memberById(id); if(!m){ toast('멤버를 찾을 수 없습니다'); return false; }
+      if(!picked){ toast('이름을 선택해주세요'); return false; }
+      const m = memberById(picked); if(!m){ toast('멤버를 찾을 수 없습니다'); return false; }
       localStorage.setItem(KEY_MY_ID, m.id);
       currentUser = {memberId: m.id, displayName: m.name, email: m.email||''};
       reEvalAuth();
       toast(`${m.name}님으로 설정됐습니다 ✓`);
     },'확인','primary');
-  if(cur){
-    setTimeout(()=>{ const s=document.getElementById('memberSelectDrop'); if(s) s.value=cur; },0);
-  }
+  const box = document.getElementById('memberSelectList');
+  box.querySelectorAll('.msel-row').forEach(row=>{
+    row.onclick=()=>{
+      picked = row.dataset.id;
+      box.querySelectorAll('.msel-row').forEach(r=>r.classList.toggle('sel', r===row));
+    };
+  });
+  // 이미 설정된 이름이 있으면 그 줄이 보이도록 스크롤
+  const selRow = box.querySelector('.msel-row.sel');
+  if(selRow) setTimeout(()=>selRow.scrollIntoView({block:'nearest'}),0);
 }
 
 function updateAuthArea(){
@@ -737,25 +758,54 @@ function recordSummary(r){
   const mv=cur.movies.find(x=>x.id===r.movieId);
   return {att:'참석 O', movie:mv?mv.title:'-', time:r.movieTime||'-', party:r.afterparty?'참석':'불참'};
 }
+/* 슬랙 전송 경로 (모든 슬랙 알림이 이 함수를 지나감)
+   1순위: 서버 중계 함수 — 웹훅 URL이 브라우저·DB에 노출되지 않고, 실패 사유도 알 수 있음
+   2순위: 앱에 저장된 웹훅 URL — 중계 함수를 배포하기 전까지의 기존 방식 */
+const SLACK_PROXY='/.netlify/functions/slack-notify';
+let slackProxyOk=null; // null=아직 확인 안 됨 / true=사용 가능 / false=미배포·미설정
+async function slackPost(text){
+  if(slackProxyOk!==false){
+    try{
+      const res=await fetch(SLACK_PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+      if(res.ok){ slackProxyOk=true; return; }
+      // 404=함수 미배포, 503=환경변수 미설정 → 아래 웹훅 방식으로 내려감
+      if(res.status===404||res.status===503){ slackProxyOk=false; }
+      else { slackProxyOk=true; throw new Error(await res.text()); }
+    }catch(e){
+      if(slackProxyOk===true) throw e; // 중계 함수는 살아있는데 슬랙 쪽이 실패 → 그대로 알림
+      slackProxyOk=false;
+    }
+  }
+  if(!slackWebhook) throw new Error('슬랙이 연동되지 않았습니다');
+  await fetch(slackWebhook,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify({text})});
+}
+/* 개인 DM 발송 — 중계 함수 + 봇 토큰이 있어야 하며, 웹훅으로는 대체할 수 없다
+   list: [{email, name, text}] → {sent, results:[{email, ok, error}]} */
+async function slackDM(list){
+  const res=await fetch(SLACK_PROXY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:list})});
+  const raw=await res.text();
+  let data=null; try{ data=JSON.parse(raw); }catch(e){}
+  if(res.status===404) throw new Error('슬랙 중계 함수가 아직 배포되지 않았습니다 (배포 후 DM 발송 가능)');
+  if(!res.ok) throw new Error((data&&data.error)||raw||`전송 실패 (${res.status})`);
+  if(!data) throw new Error('중계 함수 응답을 읽을 수 없습니다');
+  return data;
+}
 function notifyRecordSubmit(m,r){
   try{
     if(isAdmin()) return; // 관리자 본인의 수정은 알림 제외
     const s=recordSummary(r);
     db.ref(NOTIF_PATH).push({ts:firebase.database.ServerValue.TIMESTAMP, monthId:curId, name:m.name, att:s.att, movie:s.movie, time:s.time, party:s.party});
-    if(slackWebhook){
-      const text=`🎬 [씨네시스 ${curId}] ${m.name} — ${s.att}`+(r.attending===true?` · ${s.movie} ${s.time} · 뒷풀이 ${s.party}`:'');
-      fetch(slackWebhook,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify({text})}).catch(()=>{});
-    }
+    const text=`🎬 [씨네시스 ${curId}] ${m.name} — ${s.att}`+(r.attending===true?` · ${s.movie} ${s.time} · 뒷풀이 ${s.party}`:'');
+    slackPost(text).catch(()=>{}); // 슬랙 미연동이면 조용히 넘어감 (사이트 내 🔔 알림은 그대로)
   }catch(e){ console.error('notify fail',e); }
 }
 function notifyReceiptUpload(memberName, entries){
   try{
-    if(!slackWebhook) return;
     const typeLabel=t=>t==='snack'?'간식':t==='afterparty'?'뒷풀이비':'기타';
     const fmtAmt=n=>Number(n).toLocaleString('ko-KR');
     const parts=entries.map(e=>`${typeLabel(e.type)} ${fmtAmt(e.amount)}원${e.desc?` (${e.desc})`:''}`).join(' · ');
     const text=`🧾 [씨네시스 ${curId}] ${memberName} — ${parts} 영수증 업로드`;
-    fetch(slackWebhook,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify({text})}).catch(()=>{});
+    slackPost(text).catch(()=>{});
   }catch(e){ console.error('notify receipt fail',e); }
 }
 
@@ -813,7 +863,8 @@ function openSlackSettings(){
        슬랙 <b>Incoming Webhook URL</b>을 등록하면 회원이 참석 정보를 저장할 때마다 슬랙 채널로 알림이 갑니다.<br>
        <a href="https://api.slack.com/messaging/webhooks" target="_blank" rel="noopener noreferrer" style="color:var(--sepia);">웹훅 만들기 가이드 →</a></p>
      <div class="field"><label>Webhook URL</label><input id="slackUrl" type="text" placeholder="https://hooks.slack.com/services/..." value="${esc(slackWebhook||'')}"></div>
-     <p style="font-size:11px;color:var(--ink3);margin-top:8px;">비워두고 저장하면 슬랙 알림이 꺼집니다. (사이트 내 🔔 알림은 계속 작동)</p>
+     <p style="font-size:11px;color:var(--ink3);margin-top:8px;">비워두고 저장하면 이 URL을 쓰지 않습니다. (사이트 내 🔔 알림은 계속 작동)<br>
+       서버에 <b>슬랙 중계 함수</b>가 설정돼 있으면 그쪽이 먼저 쓰이므로, 이 칸은 비워두는 것이 안전합니다.</p>
      <button class="btn sm ghost" style="margin-top:8px;" onclick="slackTestSend()">📨 테스트 알림 보내기</button>`,
     async()=>{
       const url=document.getElementById('slackUrl').value.trim();
@@ -823,11 +874,17 @@ function openSlackSettings(){
     },'저장','primary');
 }
 function slackTestSend(){
-  const url=document.getElementById('slackUrl')?.value.trim()||slackWebhook;
-  if(!url){toast('먼저 Webhook URL을 입력해주세요');return;}
-  fetch(url,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify({text:'🎬 [씨네시스] 슬랙 알림 연동 테스트 메시지입니다 ✓'})})
+  const msg='🎬 [씨네시스] 슬랙 알림 연동 테스트 메시지입니다 ✓';
+  const url=document.getElementById('slackUrl')?.value.trim();
+  if(url){ // 입력창에 적은 URL을 그대로 시험 (저장 전에도 확인 가능)
+    fetch(url,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain'},body:JSON.stringify({text:msg})})
+      .then(()=>toast('테스트 알림을 보냈습니다 — 슬랙 채널을 확인해주세요'))
+      .catch(()=>toast('전송 실패 — URL을 다시 확인해주세요'));
+    return;
+  }
+  slackPost(msg) // URL이 비어 있으면 서버 중계 함수로 시험
     .then(()=>toast('테스트 알림을 보냈습니다 — 슬랙 채널을 확인해주세요'))
-    .catch(()=>toast('전송 실패 — URL을 다시 확인해주세요'));
+    .catch(e=>toast(`전송 실패 — ${e&&e.message?e.message:'연동을 확인해주세요'}`));
 }
 
 function reEvalAuth(){
@@ -1136,6 +1193,7 @@ async function loadMonth(id){
     if(cur.confirmed===undefined) cur.confirmed=false;
     if(!cur.prevMonthExclusions) cur.prevMonthExclusions=[];
     if(!cur.revealed) cur.revealed={};
+    if(!cur.bookings) cur.bookings={};
     if(cur.movies) cur.movies.forEach(mv=>{if(!mv.times) mv.times=mv.time?[mv.time]:[];});
     if(cur.records) Object.values(cur.records).forEach(r=>{if(r.movieTime===undefined) r.movieTime=null;});
     fixCombinedTimes(cur);
@@ -1279,7 +1337,7 @@ function renderActivityTable(){
 function renderActivityTableAdmin(t){
   const sorted=[...activeMembers()].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
   const locked=false; // 관리자(총무)는 확정 이후에도 참석/영화/뒷풀이를 수정할 수 있음
-  let h=`<thead><tr><th>이름</th><th>참석</th><th>관람 영화</th><th>좌석</th><th>티켓 전달</th><th>뒷풀이</th><th>연속불참</th></tr></thead><tbody>`;
+  let h=`<thead><tr><th>이름</th><th>참석</th><th>관람 영화</th><th>좌석</th><th>티켓 전달</th><th>뒷풀이</th><th>연속불참</th><th>예매 안내</th></tr></thead><tbody>`;
   sorted.forEach(m=>{
     const r=cur.records[m.id]||{attending:null,movieId:null,movieTime:null,seat:'',afterparty:false,ticketGiven:false};
     const absences=consecutiveAbsences(m.id);
@@ -1301,6 +1359,11 @@ function renderActivityTableAdmin(t){
       <td>${att===true?`<span class="chip ${r.ticketGiven?'on green':''}"${locked?' style="cursor:default"':''} data-act="ticket">${r.ticketGiven?'전달':'미전달'}</span>`:'<span style="color:var(--ink3)">-</span>'}</td>
       <td>${att===true?`<span class="chip ${r.afterparty?'on gold':''}"${locked?' style="cursor:default"':''} data-act="after">${r.afterparty?'참석':'불참'}</span>`:'<span style="color:var(--ink3)">-</span>'}</td>
       <td>${renderAbsenceCell(absences)}</td>
+      <td>${att===true
+        ? (r.movieId
+            ? `<button class="btn xs ghost" data-act="notice" style="padding:3px 8px;font-size:10.5px;white-space:nowrap;">📨 안내</button>`
+            : '<span style="color:var(--ink3);font-size:10.5px;white-space:nowrap;">영화 선택 후</span>')
+        : '<span style="color:var(--ink3)">-</span>'}</td>
     </tr>`;
   });
   h+='</tbody>'; t.innerHTML=h;
@@ -1334,6 +1397,7 @@ function renderActivityTableAdmin(t){
     const st=tr.querySelector('[data-act=seat]'); if(st)st.onchange=e=>{rec(id).seat=e.target.value;saveMonth();};
     const tk=tr.querySelector('[data-act=ticket]'); if(tk)tk.onclick=()=>{rec(id).ticketGiven=!rec(id).ticketGiven;saveMonth();renderActivityTable();updateSummaryCards();};
     const af=tr.querySelector('[data-act=after]'); if(af)af.onclick=()=>{const r=rec(id);r.afterparty=!r.afterparty;saveMonth();renderActivityTable();updateSummaryCards();renderFinance();};
+    const nt=tr.querySelector('[data-act=notice]'); if(nt)nt.onclick=()=>openMemberBookingModal(id);
   });
 }
 function renderActivityTableMember(t){
@@ -1679,6 +1743,146 @@ function renderConfirmSection(){
   } else {
     section.innerHTML = '<div class="lock-notice">🔒 총무/회장이 참석을 확정해야 집계·정산이 활성화됩니다.</div>';
   }
+}
+
+/* ── 예매 안내 (총무 → 회원 개별 슬랙 안내) ── */
+const bkKey=(movieId,time)=>`${movieId}::${time||''}`;
+let bkTarget=null; // 지금 안내 모달을 열어둔 회원
+function bookingOf(movieId,time){
+  if(!cur.bookings) cur.bookings={};
+  const k=bkKey(movieId,time);
+  if(!cur.bookings[k]) cur.bookings[k]={screen:'',endTime:'',bookingNo:'',note:''};
+  return cur.bookings[k];
+}
+// 활동일: 날짜 투표로 확정된 날 → 없으면 마지막 수요일
+function activityDate(){
+  const c=cur&&cur.dateVote&&cur.dateVote.confirmed;
+  if(c) return new Date(c+'T00:00:00');
+  return curId?getLastWednesday(curId):null;
+}
+// 한 회원의 예매 = 그 회원이 고른 (영화 × 시간대)
+function screeningOf(memberId){
+  const r=cur.records[memberId];
+  if(!r||r.attending!==true||!r.movieId) return null;
+  const movie=cur.movies.find(x=>x.id===r.movieId);
+  if(!movie) return null;
+  return {movieId:r.movieId, time:r.movieTime||'', movie};
+}
+// 같은 상영을 함께 보는 참석자
+function screeningMates(sc){
+  return activeMembers().filter(m=>{
+    const r=cur.records[m.id];
+    return r&&r.attending===true&&r.movieId===sc.movieId&&(r.movieTime||'')===sc.time;
+  }).sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+}
+function buildMemberBookingMessage(m){
+  const sc=screeningOf(m.id); if(!sc) return '';
+  const b=bookingOf(sc.movieId,sc.time);
+  const startTime=(sc.time||'').replace(/\s*\([^)]*\)\s*$/,'').trim(); // "18:10(소파석)" → "18:10"
+  const seat=((cur.records[m.id]||{}).seat||'').trim();
+  const mates=screeningMates(sc).filter(x=>x.id!==m.id);
+  const L=[];
+  L.push(`🎬 [씨네시스] ${labelOf(curId)} 예매 안내`);
+  L.push('');
+  L.push(`${m.name}님, 아래와 같이 예매되었습니다.`);
+  L.push('');
+  L.push(`영화: ${sc.movie.title}`);
+  L.push(`일시: ${formatDateKo(activityDate())}${startTime?` ${startTime}`:''}${b.endTime?` ~ ${b.endTime}`:''}`);
+  if(b.screen) L.push(`상영관: ${b.screen}`);
+  L.push(`좌석: ${seat||'배정 후 다시 안내드립니다'}`);
+  if(b.bookingNo) L.push(`예매번호: ${b.bookingNo}`);
+  if(mates.length) L.push(`함께 보는 회원: ${mates.map(x=>x.name).join(', ')}`);
+  if((b.note||'').trim()){ L.push(''); L.push(b.note.trim()); }
+  return L.join('\n');
+}
+function collectBookingInputs(){
+  if(!bkTarget) return;
+  const sc=screeningOf(bkTarget.id); if(!sc) return;
+  const b=bookingOf(sc.movieId,sc.time);
+  document.querySelectorAll('#modalBox input[data-bk]').forEach(el=>{ b[el.dataset.bk]=el.value.trim(); });
+}
+// 회원 각자에게 슬랙 DM으로 예매 안내를 보낸다
+async function sendMemberNotices(list){
+  collectBookingInputs();
+  await saveMonth();
+  const payload=[], noEmail=[];
+  list.forEach(m=>{
+    const text=buildMemberBookingMessage(m);
+    if(!text) return;
+    const email=(m.email||'').trim();
+    if(!email){ noEmail.push(m.name); return; }
+    payload.push({email,name:m.name,text});
+  });
+  if(!payload.length){
+    toast(noEmail.length?`이메일이 등록되지 않아 보낼 수 없습니다 — ${noEmail.join(', ')}`:'보낼 대상이 없습니다');
+    return 0;
+  }
+  const nameOf=email=>{ const p=payload.find(x=>x.email.toLowerCase()===String(email).toLowerCase()); return p?p.name:email; };
+  try{
+    const r=await slackDM(payload);
+    const results=r.results||[];
+    const failed=results.filter(x=>!x.ok);
+    const sent=results.filter(x=>x.ok).length;
+    if(!failed.length&&!noEmail.length){
+      toast(sent===1?`${payload[0].name}님에게 DM을 보냈습니다 ✓`:`${sent}명에게 각각 DM을 보냈습니다 ✓`);
+    }else{
+      // 실패한 사람은 사유까지 보여줘야 총무가 조치할 수 있다
+      const rows=failed.map(f=>`<div style="padding:6px 2px;border-bottom:1px solid var(--line);font-size:13px;"><b>${esc(nameOf(f.email))}</b> <span style="color:var(--burgundy);">${esc(f.error||'전송 실패')}</span></div>`).join('')
+        + noEmail.map(n=>`<div style="padding:6px 2px;border-bottom:1px solid var(--line);font-size:13px;"><b>${esc(n)}</b> <span style="color:var(--burgundy);">앱에 이메일이 등록되지 않았습니다</span></div>`).join('');
+      openModal('📨 DM 발송 결과',
+        `<p style="font-size:13px;color:var(--ink2);margin-bottom:10px;">성공 <b>${sent}명</b> · 실패 <b>${failed.length+noEmail.length}명</b></p>
+         <div style="max-height:260px;overflow-y:auto;">${rows}</div>
+         <p style="font-size:11.5px;color:var(--ink3);margin-top:10px;">실패한 회원은 원인을 해결한 뒤 해당 회원의 📨 안내 버튼으로 다시 보내면 됩니다.</p>`,
+        ()=>{},'확인');
+    }
+    return sent;
+  }catch(e){
+    console.error('DM 발송 실패',e);
+    toast(`전송 실패 — ${e.message}`);
+    return 0;
+  }
+}
+function openMemberBookingModal(memberId){
+  if(!isAdmin()){ toast('권한이 없습니다'); return; }
+  const m=memberById(memberId); if(!m) return;
+  const sc=screeningOf(memberId);
+  if(!sc){ toast('참석·관람 영화를 먼저 지정해주세요'); return; }
+  bkTarget=m;
+  const b=bookingOf(sc.movieId,sc.time);
+  const mates=screeningMates(sc);
+  const email=(m.email||'').trim();
+  openModal(`🎟 ${esc(m.name)}님 예매 안내`,
+    `<p style="font-size:12.5px;color:var(--ink2);line-height:1.7;margin-bottom:12px;">
+       아래 예매 정보는 <b>${esc(sc.movie.title)} ${esc(sc.time||'')}</b> 상영을 함께 보는 <b>${mates.length}명</b>에게 공통으로 쓰입니다.
+       한 번만 입력하면 나머지 회원 안내에도 그대로 들어갑니다. 좌석은 각자 입력한 값이 들어갑니다.<br>
+       <span style="color:var(--ink3);font-size:11.5px;">회원 각자에게 <b>슬랙 DM</b>으로 갑니다 (채널에는 올라가지 않습니다). 카드번호·결제 정보는 보내지 않습니다.</span></p>
+     ${email
+       ? `<p style="font-size:11.5px;color:var(--ink3);margin:-6px 0 12px;">받는 사람: ${esc(email)} — 이 이메일로 슬랙 계정을 찾아 DM을 보냅니다.</p>`
+       : `<p style="font-size:11.5px;color:var(--burgundy);margin:-6px 0 12px;">⚠ ${esc(m.name)}님의 이메일이 앱에 등록되지 않아 DM을 보낼 수 없습니다. 회원 관리에서 이메일을 먼저 입력해주세요.</p>`}
+     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 10px;">
+       <div class="field"><label>상영관</label><input type="text" data-bk="screen" value="${esc(b.screen||'')}" placeholder="예) 월드타워 소파석 18관 LASER"></div>
+       <div class="field"><label>종료 시간</label><input type="text" data-bk="endTime" value="${esc(b.endTime||'')}" placeholder="예) 20:11"></div>
+       <div class="field"><label>예매번호</label><input type="text" data-bk="bookingNo" value="${esc(b.bookingNo||'')}" placeholder="예) 18257291"></div>
+       <div class="field"><label>추가 안내 (선택)</label><input type="text" data-bk="note" value="${esc(b.note||'')}" placeholder="예) 상영 10분 전 로비에서 만나요"></div>
+     </div>
+     <div style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;margin:12px 0 4px;">${esc(m.name)}님에게 갈 메시지</div>
+     <pre id="bkPrev" style="white-space:pre-wrap;font-family:inherit;font-size:12.5px;line-height:1.65;background:var(--paper2);border:1px solid var(--line);border-radius:4px;padding:10px 12px;margin:0;">${esc(buildMemberBookingMessage(m))}</pre>
+     <p style="font-size:11.5px;color:var(--ink3);margin-top:8px;">※ DM은 슬랙 봇 설정이 끝난 뒤부터 발송됩니다. 실패하면 회원별 사유가 표시됩니다.</p>
+     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">
+       <button class="btn sm ghost" id="bkSaveOnly" style="font-size:11.5px;">💾 예매 정보만 저장</button>
+       ${mates.length>1?`<button class="btn sm ghost" id="bkSendMates" style="font-size:11.5px;">📨 이 상영 ${mates.length}명에게 각각 DM</button>`:''}
+     </div>`,
+    // 결과 안내 모달이 뜰 수 있으므로 먼저 이 모달을 닫고 보낸다
+    async()=>{ collectBookingInputs(); closeModal(); await sendMemberNotices([m]); return false; },
+    `📨 ${esc(m.name)}님에게 DM`,'primary');
+  const prev=document.getElementById('bkPrev');
+  document.querySelectorAll('#modalBox input[data-bk]').forEach(el=>{
+    el.oninput=()=>{ collectBookingInputs(); if(prev) prev.textContent=buildMemberBookingMessage(m); };
+  });
+  const saveBtn=document.getElementById('bkSaveOnly');
+  if(saveBtn) saveBtn.onclick=async()=>{ collectBookingInputs(); await saveMonth(); toast('예매 정보를 저장했습니다 ✓'); closeModal(); };
+  const matesBtn=document.getElementById('bkSendMates');
+  if(matesBtn) matesBtn.onclick=async()=>{ collectBookingInputs(); closeModal(); await sendMemberNotices(mates); };
 }
 function renderRouletteSectionVisibility(){
   const sec = document.getElementById('sec-roulette');

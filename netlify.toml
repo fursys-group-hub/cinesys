@@ -1,0 +1,9 @@
+# 정적 사이트 + 슬랙 중계 함수
+# 배포: npx netlify-cli deploy --prod --dir . --functions netlify/functions
+
+[build]
+  publish = "."
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
