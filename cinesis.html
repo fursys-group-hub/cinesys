@@ -1422,7 +1422,14 @@ function renderActivityTableAdmin(t){
 function renderActivityTableMember(t){
   const sorted=[...activeMembers()].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
   const locked=cur.confirmed;
-  let h=`<thead><tr><th>이름</th><th>참석${!locked?'<span style="font-size:10px;color:var(--ink3);font-weight:400;margin-left:5px;">눌러서 응답</span>':''}</th><th>관람 영화</th><th>좌석</th><th>뒷풀이</th><th>연속불참</th><th>예매 안내</th></tr></thead><tbody>`;
+  // 회원은 본인 줄만 수정할 수 있다 (총무·회장은 별도 표를 사용)
+  const myId=currentUser?currentUser.memberId:null;
+  const canEdit=id=>!locked&&!!myId&&id===myId;
+  const hint=!locked
+    ? (myId?'<span style="font-size:10px;color:var(--ink3);font-weight:400;margin-left:5px;">본인 줄을 눌러 응답</span>'
+           :'<span style="font-size:10px;color:var(--ink3);font-weight:400;margin-left:5px;">이름을 먼저 선택하세요</span>')
+    : '';
+  let h=`<thead><tr><th>이름</th><th>참석${hint}</th><th>관람 영화</th><th>좌석</th><th>뒷풀이</th><th>연속불참</th><th>예매 안내</th></tr></thead><tbody>`;
   sorted.forEach(m=>{
     const r=cur.records[m.id]||{attending:null};
     const absences=consecutiveAbsences(m.id);
@@ -1430,12 +1437,13 @@ function renderActivityTableMember(t){
     const attClass=att===true?'on':att===false?'':'pending';
     const attText=att===true?'참석 O':att===false?'불참 X':'미응답';
     const mv=att===true?cur.movies.find(mv=>mv.id===r.movieId):null;
-    const clickStyle=!locked?'cursor:pointer;':'cursor:default;';
-    h+=`<tr>
+    const mine=canEdit(m.id);
+    const clickStyle=mine?'cursor:pointer;':'cursor:default;opacity:.85;';
+    h+=`<tr${m.id===myId?' style="background:rgba(196,161,85,.07);"':''}>
       <td class="name" data-id="${m.id}">
-        ${esc(m.name)}
+        ${esc(m.name)}${m.id===myId?' <span class="pill self xs">본인</span>':''}
       </td>
-      <td><span class="chip ${attClass}" style="${clickStyle}" data-id="${m.id}">${attText}</span></td>
+      <td><span class="chip ${attClass}" style="${clickStyle}"${mine?` data-edit="${m.id}"`:''} title="${mine?'눌러서 응답':'본인 참석 정보만 수정할 수 있습니다'}">${attText}</span></td>
       <td style="font-size:13px;color:${mv?'var(--ink)':'var(--ink3)'};">${mv?esc(mv.title)+' <span style="font-family:\'Montserrat\';font-size:11px;">'+esc(r.movieTime||'')+'</span>':'-'}</td>
       <td>${att===true
         ? ((r.seat||'').trim()
@@ -1448,14 +1456,18 @@ function renderActivityTableMember(t){
     </tr>`;
   });
   h+='</tbody>'; t.innerHTML=h;
-  if(!locked){
-    t.querySelectorAll('.chip[data-id]').forEach(chip=>{
-      chip.onclick=()=>openAttendancePopup(chip.dataset.id);
-    });
-  }
+  // 본인 줄에만 수정 기능을 연결한다
+  t.querySelectorAll('.chip[data-edit]').forEach(chip=>{
+    chip.onclick=()=>openAttendancePopup(chip.dataset.edit);
+  });
 }
 function openAttendancePopup(memberId){
   if(!cur||cur.confirmed){return;}
+  // 화면을 우회해 열리는 경우까지 막는다 — 회원은 본인 것만
+  if(!isAdmin()){
+    if(!currentUser){ toast('먼저 내 이름을 선택해주세요'); return; }
+    if(memberId!==currentUser.memberId){ toast('본인 참석 정보만 수정할 수 있습니다'); return; }
+  }
   const m=members.find(mb=>mb.id===memberId); if(!m) return;
   const r=cur.records[memberId]||{attending:null,movieId:null,movieTime:null,afterparty:false};
   const attYes=r.attending===true?'checked':'';
