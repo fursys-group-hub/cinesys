@@ -28,14 +28,33 @@ const json = (statusCode, obj) => ({
   body: JSON.stringify(obj),
 });
 
+const allowedOrigins = () =>
+  (process.env.ALLOWED_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
+
 // 이 함수는 인터넷에 열려 있으므로, 호출 출처를 확인해 오용을 조금이라도 줄인다.
 // (완전한 방어는 아니다 — 제대로 막으려면 앱에 로그인 기능이 있어야 한다)
 function originAllowed(headers) {
-  const allowed = (process.env.ALLOWED_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
+  const allowed = allowedOrigins();
   if (!allowed.length) return true; // 미설정 시 통과
   const origin = headers.origin || '';
   const referer = headers.referer || '';
   return allowed.some(a => origin === a || referer.startsWith(a));
+}
+
+// 앱이 다른 도메인(회사 허브 등)에서 서비스될 때를 위한 교차 출처 허용.
+// 허용 목록에 있는 출처에만 헤더를 내려준다.
+function corsHeaders(headers) {
+  const origin = (headers.origin || '').trim();
+  if (!origin) return {};
+  const allowed = allowedOrigins();
+  if (allowed.length && !allowed.includes(origin)) return {};
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
+  };
 }
 
 function clip(text) {
@@ -110,7 +129,7 @@ async function sendDMs(messages) {
   return json(200, { ok: results.some(r => r.ok), sent: results.filter(r => r.ok).length, results });
 }
 
-exports.handler = async (event) => {
+async function route(event) {
   if (event.httpMethod !== 'POST') return json(405, { error: 'POST만 허용됩니다' });
   if (!originAllowed(event.headers || {})) return json(403, { error: '허용되지 않은 요청 출처입니다' });
 
@@ -129,4 +148,14 @@ exports.handler = async (event) => {
   const text = clip(body.text);
   if (!text) return json(400, { error: '보낼 내용이 없습니다' });
   return postToChannel(text);
+}
+
+exports.handler = async (event) => {
+  const cors = corsHeaders(event.headers || {});
+  const withCors = (r) => ({ ...r, headers: { ...(r.headers || {}), ...cors } });
+
+  // 브라우저가 교차 출처 요청 전에 보내는 사전 확인(preflight)
+  if (event.httpMethod === 'OPTIONS') return withCors({ statusCode: 204, body: '' });
+
+  return withCors(await route(event));
 };
