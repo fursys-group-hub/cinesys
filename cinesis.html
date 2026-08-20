@@ -1376,7 +1376,10 @@ function renderActivityTableAdmin(t){
       <td>${renderAbsenceCell(absences)}</td>
       <td>${att===true
         ? (r.movieId
-            ? `<button class="btn xs ghost" data-act="notice" style="padding:3px 8px;font-size:10.5px;white-space:nowrap;">📨 안내</button>`
+            ? `<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
+                 <button class="btn xs ghost" data-act="notice" style="padding:3px 8px;font-size:10.5px;white-space:nowrap;">${r.noticeSentAt?'📨 다시 안내':'📨 안내'}</button>
+                 ${noticeStatusHtml(r)}
+               </div>`
             : '<span style="color:var(--ink3);font-size:10.5px;white-space:nowrap;">영화 선택 후</span>')
         : '<span style="color:var(--ink3)">-</span>'}</td>
     </tr>`;
@@ -1389,6 +1392,7 @@ function renderActivityTableAdmin(t){
       const r=rec(id);
       // null → true → false → null 순환
       r.attending=r.attending===null||r.attending===undefined?true:r.attending===true?false:null;
+      clearNotice(id);
       if(!r.attending){r.movieId=null;r.movieTime=null;r.afterparty=false;r.ticketGiven=false;}
       else if(r.attending&&!r.movieId&&cur.movies[0]){r.movieId=cur.movies[0].id;r.movieTime=(cur.movies[0].times||[])[0]||null;}
       if(r.attending&&r.movieId) autoAddToLibrary(r.movieId);
@@ -1398,7 +1402,7 @@ function renderActivityTableAdmin(t){
     const tmSel=tr.querySelector('[data-act=mv-time]');
     if(mvSel) mvSel.onchange=e=>{
       const mid=e.target.value||null;
-      const r=rec(id); r.movieId=mid; r.movieTime=null;
+      const r=rec(id); r.movieId=mid; r.movieTime=null; clearNotice(id);
       const mv=cur.movies.find(m=>m.id===mid);
       const times=mv?(mv.times||[]):[];
       if(tmSel){
@@ -1408,8 +1412,8 @@ function renderActivityTableAdmin(t){
       }
       saveMonth();renderMovies();updateSummaryCards();renderFinance();
     };
-    if(tmSel) tmSel.onchange=e=>{rec(id).movieTime=e.target.value||null;saveMonth();renderMovies();updateSummaryCards();renderFinance();};
-    const st=tr.querySelector('[data-act=seat]'); if(st)st.onchange=e=>{rec(id).seat=e.target.value;saveMonth();};
+    if(tmSel) tmSel.onchange=e=>{rec(id).movieTime=e.target.value||null;clearNotice(id);saveMonth();renderActivityTable();renderMovies();updateSummaryCards();renderFinance();};
+    const st=tr.querySelector('[data-act=seat]'); if(st)st.onchange=e=>{rec(id).seat=e.target.value;const c=clearNotice(id);saveMonth();if(c)renderActivityTable();};
     const tk=tr.querySelector('[data-act=ticket]'); if(tk)tk.onclick=()=>{rec(id).ticketGiven=!rec(id).ticketGiven;saveMonth();renderActivityTable();updateSummaryCards();};
     const af=tr.querySelector('[data-act=after]'); if(af)af.onclick=()=>{const r=rec(id);r.afterparty=!r.afterparty;saveMonth();renderActivityTable();updateSummaryCards();renderFinance();};
     const nt=tr.querySelector('[data-act=notice]'); if(nt)nt.onclick=()=>openMemberBookingModal(id);
@@ -1418,7 +1422,7 @@ function renderActivityTableAdmin(t){
 function renderActivityTableMember(t){
   const sorted=[...activeMembers()].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
   const locked=cur.confirmed;
-  let h=`<thead><tr><th>이름</th><th>참석${!locked?'<span style="font-size:10px;color:var(--ink3);font-weight:400;margin-left:5px;">눌러서 응답</span>':''}</th><th>관람 영화</th><th>뒷풀이</th><th>연속불참</th></tr></thead><tbody>`;
+  let h=`<thead><tr><th>이름</th><th>참석${!locked?'<span style="font-size:10px;color:var(--ink3);font-weight:400;margin-left:5px;">눌러서 응답</span>':''}</th><th>관람 영화</th><th>좌석</th><th>뒷풀이</th><th>연속불참</th><th>예매 안내</th></tr></thead><tbody>`;
   sorted.forEach(m=>{
     const r=cur.records[m.id]||{attending:null};
     const absences=consecutiveAbsences(m.id);
@@ -1433,8 +1437,14 @@ function renderActivityTableMember(t){
       </td>
       <td><span class="chip ${attClass}" style="${clickStyle}" data-id="${m.id}">${attText}</span></td>
       <td style="font-size:13px;color:${mv?'var(--ink)':'var(--ink3)'};">${mv?esc(mv.title)+' <span style="font-family:\'Montserrat\';font-size:11px;">'+esc(r.movieTime||'')+'</span>':'-'}</td>
+      <td>${att===true
+        ? ((r.seat||'').trim()
+            ? `<span style="font-family:'Montserrat';font-size:12.5px;font-weight:600;">${esc(r.seat.trim())}</span>`
+            : '<span style="color:var(--ink3);font-size:12px;">미정</span>')
+        : '<span style="color:var(--ink3)">-</span>'}</td>
       <td>${att===true?`<span class="chip ${r.afterparty?'on gold':''}" style="cursor:default;">${r.afterparty?'참석':'불참'}</span>`:'<span style="color:var(--ink3)">-</span>'}</td>
       <td>${renderAbsenceCell(absences)}</td>
+      <td>${noticeStatusHtml(r)||'<span style="color:var(--ink3)">-</span>'}</td>
     </tr>`;
   });
   h+='</tbody>'; t.innerHTML=h;
@@ -1498,6 +1508,7 @@ function openAttendancePopup(memberId){
     const v=box?.querySelector('input[name=att]:checked')?.value;
     const attending=v==='yes'?true:v==='no'?false:null;
     const r=rec(memberId);
+    const before=`${r.attending}|${r.movieId}|${r.movieTime}|${r.seat||''}`;
     r.attending=attending;
     if(attending===true){
       r.movieId=box?.querySelector('input[name=popmovie]:checked')?.value||null;
@@ -1507,6 +1518,8 @@ function openAttendancePopup(memberId){
     } else {
       r.movieId=null;r.movieTime=null;r.seat='';r.afterparty=false;r.ticketGiven=false;
     }
+    // 영화·시간·좌석이 바뀌었으면 이전 안내는 더 이상 맞지 않다
+    if(`${r.attending}|${r.movieId}|${r.movieTime}|${r.seat||''}`!==before) clearNotice(memberId);
     if(attending===true&&r.movieId) autoAddToLibrary(r.movieId);
     const ok=await saveMonth();
     renderActivity();updateSummaryCards();renderFinance();
@@ -1761,6 +1774,19 @@ function renderConfirmSection(){
 }
 
 /* ── 예매 안내 (총무 → 회원 개별 슬랙 안내) ── */
+// 안내 완료 표시 — 모든 회원이 볼 수 있게 참석 표에 함께 그린다
+function noticeStatusHtml(r){
+  if(!r||!r.noticeSentAt) return '';
+  const d=new Date(r.noticeSentAt);
+  const when=`${d.getMonth()+1}/${d.getDate()}`;
+  return `<span class="pill ok xs" title="${esc(d.toLocaleString('ko-KR'))} 발송">안내 완료 ${when}</span>`;
+}
+// 영화·시간·좌석이 바뀌면 이전 안내는 더 이상 맞지 않으므로 표시를 지운다
+function clearNotice(id){
+  const r=cur&&cur.records&&cur.records[id];
+  if(r&&r.noticeSentAt){ delete r.noticeSentAt; return true; }
+  return false;
+}
 const bkKey=(movieId,time)=>`${movieId}::${time||''}`;
 let bkTarget=null; // 지금 안내 모달을 열어둔 회원
 function bookingOf(movieId,time){
@@ -1838,6 +1864,13 @@ async function sendMemberNotices(list){
     const results=r.results||[];
     const failed=results.filter(x=>!x.ok);
     const sent=results.filter(x=>x.ok).length;
+    // 발송 성공한 회원에게 안내 완료 시각 기록 — 모든 회원이 표에서 확인할 수 있다
+    const okEmails=new Set(results.filter(x=>x.ok).map(x=>String(x.email||'').toLowerCase()));
+    let stamped=false;
+    list.forEach(m=>{
+      if(okEmails.has((m.email||'').trim().toLowerCase())){ rec(m.id).noticeSentAt=Date.now(); stamped=true; }
+    });
+    if(stamped){ await saveMonth(); renderActivityTable(); }
     if(!failed.length&&!noEmail.length){
       toast(sent===1?`${payload[0].name}님에게 DM을 보냈습니다 ✓`:`${sent}명에게 각각 DM을 보냈습니다 ✓`);
     }else{
