@@ -7,3 +7,15 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+
+# 앱이 단일 HTML 파일이라, 브라우저가 예전 버전을 붙들고 있으면
+# 알림·발송 로직이 옛 방식으로 동작한다. 접속할 때마다 새 버전을 확인하게 한다.
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "no-cache, must-revalidate"
+
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "no-cache, must-revalidate"

@@ -809,9 +809,14 @@ function notifyRecordSubmit(m,r){
   try{
     if(isAdmin()) return; // 관리자 본인의 수정은 알림 제외
     const s=recordSummary(r);
-    db.ref(NOTIF_PATH).push({ts:firebase.database.ServerValue.TIMESTAMP, monthId:curId, name:m.name, att:s.att, movie:s.movie, time:s.time, party:s.party});
+    const ref=db.ref(NOTIF_PATH).push({ts:firebase.database.ServerValue.TIMESTAMP, monthId:curId, name:m.name, att:s.att, movie:s.movie, time:s.time, party:s.party});
     const text=`🎬 [씨네시스 ${curId}] ${m.name} — ${s.att}`+(r.attending===true?` · ${s.movie} ${s.time} · 뒷풀이 ${s.party}`:'');
-    slackPost(text).catch(()=>{}); // 슬랙 미연동이면 조용히 넘어감 (사이트 내 🔔 알림은 그대로)
+    // 슬랙 전송이 실패하면 알림 기록에 남겨 🔔 목록에서 드러나게 한다
+    // (예전 버전이 캐시된 브라우저처럼, 조용히 실패하면 총무가 알 수 없다)
+    slackPost(text).catch(e=>{
+      console.error('슬랙 알림 실패',e);
+      try{ ref.update({slackError:String((e&&e.message)||'전송 실패')}); }catch(_){}
+    });
   }catch(e){ console.error('notify fail',e); }
 }
 function notifyReceiptUpload(memberName, entries){
@@ -858,8 +863,11 @@ function openNotifPanel(){
     const when=d?`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`:'-';
     const attColor=n.att==='참석 O'?'var(--sage)':n.att==='불참 X'?'var(--burgundy)':'var(--ink3)';
     const detail=n.att==='참석 O'?` · ${esc(n.movie)} <b style="font-family:'Montserrat';font-size:12px;">${esc(n.time)}</b> · 뒷풀이 ${esc(n.party)}`:'';
+    const slackWarn=n.slackError
+      ? `<span class="pill no xs" style="margin-left:6px;" title="${esc(n.slackError)}">슬랙 미발송</span>`
+      : '';
     return `<div style="padding:9px 2px;border-bottom:1px solid var(--line);">
-      <div style="font-size:13.5px;"><b>${esc(n.name)}</b> <span style="color:${attColor};font-weight:600;">${esc(n.att)}</span>${detail}</div>
+      <div style="font-size:13.5px;"><b>${esc(n.name)}</b> <span style="color:${attColor};font-weight:600;">${esc(n.att)}</span>${detail}${slackWarn}</div>
       <div style="font-size:11px;color:var(--ink3);margin-top:2px;">${when}${n.monthId?' · '+esc(n.monthId):''}</div>
     </div>`;
   }).join(''):'<div class="empty">아직 알림이 없습니다.<br>회원이 참석·영화·뒷풀이를 저장하면 여기에 표시됩니다.</div>';
