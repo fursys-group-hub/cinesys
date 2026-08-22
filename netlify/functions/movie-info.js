@@ -201,11 +201,16 @@ async function route(event) {
     if (!p.ok) return json(502, { error: `KOBIS 조회 실패 — ${p.reason}` });
     const found = await resolveAudience(key, String(title || ''), year);
     if (found) return json(200, { audience: found });
-    // 결과가 없으면 왜 없는지 알 수 있게 KOBIS가 돌려준 내용을 함께 전달
+    // 결과가 없으면 왜 없는지 알 수 있게 KOBIS가 돌려준 내용을 함께 전달.
+    // 제목 검색은 키가 틀려도 0건으로만 응답하므로, 오류를 알려주는
+    // 주간 박스오피스로 키 자체를 따로 확인한다.
     const lst = (p.data && p.data.movieListResult) || {};
+    const lastWeek = new Date(Date.now() - 8 * 86400000);
+    const kp = await probe(`${KOBIS}/boxoffice/searchWeeklyBoxOfficeList.json?key=${key}&targetDt=${ymd(lastWeek)}&itemPerPage=10`);
     return json(200, {
       audience: null,
-      detail: `KOBIS 검색 결과 ${lst.totCnt != null ? lst.totCnt + '건' : '알 수 없음'}`,
+      키확인: kp.ok ? '정상' : kp.reason,
+      detail: `KOBIS 제목 검색 결과 ${lst.totCnt != null ? lst.totCnt + '건' : '알 수 없음'}`,
       candidates: (lst.movieList || []).slice(0, 5).map(m => ({ movieNm: m.movieNm, movieCd: m.movieCd, openDt: m.openDt })),
     });
   }
