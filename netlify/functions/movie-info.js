@@ -55,6 +55,22 @@ const getJson = async (url) => {
   return r.json().catch(() => null);
 };
 
+/* 조회가 실패했을 때 원인을 알 수 있게 응답을 그대로 살펴본다.
+   TMDB는 status_message, KOBIS는 faultInfo.message로 사유를 알려준다. */
+async function probe(url) {
+  try {
+    const r = await fetch(url);
+    const text = await r.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch (e) {}
+    if (data && data.faultInfo) return { ok: false, reason: `KOBIS: ${data.faultInfo.message || ''} (${data.faultInfo.errorCode || ''})` };
+    if (!r.ok) return { ok: false, reason: `TMDB ${r.status}: ${(data && data.status_message) || text.slice(0, 120)}` };
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, reason: e.message };
+  }
+}
+
 const ymd = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
 const parseOpenDt = (s) => {
   if (!s || String(s).length < 8) return null;
@@ -169,15 +185,20 @@ async function route(event) {
     if (!key) return json(503, { error: 'TMDB_KEY 환경변수가 설정되지 않았습니다' });
     const q = body.search.trim();
     if (!q) return json(400, { error: '검색어가 없습니다' });
-    const d = await getJson(`${TMDB}/search/movie?api_key=${key}&query=${encodeURIComponent(q)}&language=ko-KR`);
-    if (!d) return json(502, { error: 'TMDB 조회에 실패했습니다 — 키를 확인해주세요' });
-    return json(200, { results: d.results || [] });
+    const p = await probe(`${TMDB}/search/movie?api_key=${key}&query=${encodeURIComponent(q)}&language=ko-KR`);
+    if (!p.ok) return json(502, { error: `TMDB 조회 실패 — ${p.reason}` });
+    return json(200, { results: (p.data && p.data.results) || [] });
   }
 
   if (body.audience && typeof body.audience === 'object') {
     const key = process.env.KOBIS_KEY;
     if (!key) return json(503, { error: 'KOBIS_KEY 환경변수가 설정되지 않았습니다' });
     const { title, year } = body.audience;
+    const yr = year ? String(year) : '';
+    // 키 문제인지 검색 결과가 없는 것인지 구분해서 알려준다
+    const p = await probe(`${KOBIS}/movie/searchMovieList.json?key=${key}&movieNm=${encodeURIComponent(String(title || ''))}`
+      + `&openStartDt=${yr}&openEndDt=${yr ? String(Number(yr) + 1) : ''}&itemPerPage=5`);
+    if (!p.ok) return json(502, { error: `KOBIS 조회 실패 — ${p.reason}` });
     return json(200, { audience: await resolveAudience(key, String(title || ''), year) });
   }
 
