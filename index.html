@@ -764,24 +764,35 @@ function recordSummary(r){
 /* 중계 함수 주소
    같은 도메인에 있으면 그쪽을 쓰고, 없으면(회사 허브처럼 화면 파일만 있는 경우)
    Netlify 주소로 직접 호출한다. 함수가 허용 출처에 CORS를 열어두고 있다. */
-const SLACK_PROXY='/.netlify/functions/slack-notify';
-const SLACK_PROXY_FALLBACK='https://cinesys.netlify.app/.netlify/functions/slack-notify';
-let slackProxyUrl=null; // 한 번 통한 주소를 기억해 두면 다음부터 바로 감
-async function slackProxyFetch(payload){
-  const urls = slackProxyUrl ? [slackProxyUrl] : [SLACK_PROXY, SLACK_PROXY_FALLBACK];
+const PROXY_FALLBACK_BASE='https://cinesys.netlify.app';
+let proxyBase=null; // '' = 같은 도메인 / 절대주소 = 회사 허브처럼 함수가 없는 경우
+async function proxyFetch(fn, payload){
+  const bases = proxyBase!==null ? [proxyBase] : ['', PROXY_FALLBACK_BASE];
   let lastRes=null;
-  for(const u of urls){
+  for(const b of bases){
     let res;
     try{
-      res=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+      res=await fetch(`${b}/.netlify/functions/${fn}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     }catch(e){ continue; } // 네트워크·CORS 실패 → 다음 주소 시도
     // 404·401 = 이 주소엔 함수가 없음 → 다음 주소 시도
     if(res.status===404||res.status===401){ lastRes=res; continue; }
-    slackProxyUrl=u;
+    proxyBase=b;
     return res;
   }
   return lastRes;
 }
+// 중계 함수 응답을 JSON으로 읽고, 실패 사유를 그대로 올려준다
+async function proxyJson(fn, payload){
+  const res=await proxyFetch(fn,payload);
+  if(!res) throw new Error('중계 함수에 연결할 수 없습니다 — 네트워크를 확인해주세요');
+  const raw=await res.text();
+  let data=null; try{ data=JSON.parse(raw); }catch(e){}
+  if(res.status===404||res.status===401) throw new Error('중계 함수를 찾을 수 없습니다 (배포 상태를 확인해주세요)');
+  if(!res.ok) throw new Error((data&&data.error)||raw||`요청 실패 (${res.status})`);
+  if(!data) throw new Error('중계 함수 응답을 읽을 수 없습니다');
+  return data;
+}
+const slackProxyFetch=payload=>proxyFetch('slack-notify',payload);
 async function slackPost(text){
   const res=await slackProxyFetch({text});
   if(res&&res.ok) return;
@@ -989,9 +1000,8 @@ const KEY_SLACK='cns-slack-webhook';
 const KEY_MEMBER_MIGR='cns-member-migr-ver';
 const MEMBER_MIGR_VER=1;
 const mKey = id => 'cns-month-'+id;
-const TMDB_KEY=CFG.TMDB_KEY||'';
+// TMDB·KOBIS 키는 브라우저에 두지 않는다 — movie-info 중계 함수가 서버에서 사용
 const TMDB_IMG='https://image.tmdb.org/t/p/w500';
-const KOBIS_KEY=CFG.KOBIS_KEY||'';
 
 const COMPANIES = ['퍼시스','퍼시스홀딩스','일룸','일룸홀딩스','시디즈','기타'];
 
@@ -3452,78 +3462,41 @@ function deleteLibEntry(id){
     async()=>{library=library.filter(e=>e.id!==id);await saveLibrary();renderLibrary();toast('삭제되었습니다');},'삭제','danger');
 }
 
-async function kobisWeeklyAcc(movieCd, base, weeks){
-  const today = new Date();
-  // 최근 주부터 역순으로 탐색 — 데이터 발견 즉시 반환 (보통 1회 요청으로 완료)
-  for(let w = weeks; w >= 1; w--){
-    const d = new Date(base); d.setDate(d.getDate() + w*7);
-    if(d > today) continue;
-    try{
-      const r = await fetch(`https://www.kobis.or.kr/kobisopenapi/webservice/rest/boxoffice/searchWeeklyBoxOfficeList.json?key=${KOBIS_KEY}&targetDt=${d.toISOString().slice(0,10).replace(/-/g,'')}&itemPerPage=50`);
-      if(!r.ok) continue;
-      const bd = await r.json();
-      const found = (bd?.boxOfficeResult?.weeklyBoxOfficeList||[]).find(m=>m.movieCd===movieCd);
-      if(found) return Number(found.audiAcc);
-    }catch{}
-  }
-  return null;
-}
-
+/* TMDB·KOBIS 조회는 movie-info 중계 함수를 거친다.
+   API 키를 브라우저에 두지 않기 위한 구조이며, KOBIS 주간 순위 탐색도 서버에서 돈다. */
 async function fetchKOBISAudience(title, year){
   try{
-    const yr = year||'';
-    const s = await fetch(`https://www.kobis.or.kr/kobisopenapi/webservice/rest/movie/searchMovieList.json?key=${KOBIS_KEY}&movieNm=${encodeURIComponent(title)}&openStartDt=${yr}&openEndDt=${yr?String(Number(yr)+1):''}&itemPerPage=5`);
-    if(!s.ok) return null;
-    const sd = await s.json();
-    const ml = sd?.movieListResult?.movieList;
-    if(!ml?.length) return null;
-    const {movieCd, openDt} = ml[0];
-    if(!openDt||openDt.length<8) return null;
-    const base = new Date(`${openDt.slice(0,4)}-${openDt.slice(4,6)}-${openDt.slice(6,8)}`);
-    const audiAcc = await kobisWeeklyAcc(movieCd, base, 14);
-    return { audiAcc, movieCd, openDt };
+    const d=await proxyJson('movie-info',{audience:{title,year}});
+    return d.audience||null;
   }catch(e){ console.warn('KOBIS:',e.message); return null; }
-}
-
-async function fetchKOBISLiveAudience(movieCd, openDt){
-  try{
-    const base=new Date(`${openDt.slice(0,4)}-${openDt.slice(4,6)}-${openDt.slice(6,8)}`);
-    return await kobisWeeklyAcc(movieCd, base, 14);
-  }catch(e){return null;}
 }
 
 async function refreshLibraryLiveData(){
   if(!library.length) return;
   let changed=false;
-  await Promise.all(library.map(async e=>{
-    // TMDB 평점 실시간 갱신
-    if(e.tmdbId){
-      try{
-        const r=await fetch(`https://api.themoviedb.org/3/movie/${e.tmdbId}?api_key=${TMDB_KEY}&language=ko-KR`);
-        if(r.ok){const d=await r.json();if(d.vote_average!=null&&d.vote_average!==e.rating){e.rating=d.vote_average;changed=true;}}
-      }catch(err){}
-    }
-    // KOBIS 관객수 실시간 갱신
-    if(e.kobisMovieCd&&e.kobisOpenDt){
-      const acc=await fetchKOBISLiveAudience(e.kobisMovieCd,e.kobisOpenDt);
-      if(acc!=null&&acc!==(e.audienceCount||0)){e.audienceCount=acc;changed=true;}
-    } else if(!e.kobisMovieCd&&e.title&&e.year){
-      // 최초 등록 시 KOBIS 코드를 못 가져온 항목 재시도 (군체 같이 개봉 초기에 등록된 경우)
-      const info=await fetchKOBISAudience(e.title,e.year);
-      if(info?.movieCd){
-        e.kobisMovieCd=info.movieCd;e.kobisOpenDt=info.openDt;
-        if(info.audiAcc!=null){e.audienceCount=info.audiAcc;}
-        changed=true;
-      }
-    }
-  }));
+  try{
+    const items=library.map(e=>({
+      id:e.id, tmdbId:e.tmdbId||null, kobisMovieCd:e.kobisMovieCd||null,
+      kobisOpenDt:e.kobisOpenDt||null, title:e.title||'', year:e.year||'',
+      audienceCount:e.audienceCount||0
+    }));
+    const {results=[]}=await proxyJson('movie-info',{items});
+    results.forEach(r=>{
+      const e=library.find(x=>x.id===r.id); if(!e) return;
+      if(r.rating!=null&&r.rating!==e.rating){ e.rating=r.rating; changed=true; }
+      if(r.audienceCount!=null&&r.audienceCount!==(e.audienceCount||0)){ e.audienceCount=r.audienceCount; changed=true; }
+      if(r.kobisMovieCd&&!e.kobisMovieCd){ e.kobisMovieCd=r.kobisMovieCd; e.kobisOpenDt=r.kobisOpenDt; changed=true; }
+    });
+  }catch(e){
+    console.warn('라이브러리 갱신 실패:',e.message);
+    return; // 조용히 넘어감 — 저장된 값이 그대로 표시된다
+  }
   if(changed){renderLibrary();saveLibrary();}
 }
 
 async function tmdbSearch(q){
-  const r=await fetch(`https://api.themoviedb.org/3/search/movie?api_key=${TMDB_KEY}&query=${encodeURIComponent(q)}&language=ko-KR`);
-  if(!r.ok) throw new Error('TMDB error');
-  return (await r.json()).results||[];
+  const d=await proxyJson('movie-info',{search:q});
+  return d.results||[];
 }
 
 function openAddLibraryModal(editId=null){
