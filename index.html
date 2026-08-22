@@ -3485,7 +3485,8 @@ async function refreshLibraryLiveData(){
       const e=library.find(x=>x.id===r.id); if(!e) return;
       if(r.rating!=null&&r.rating!==e.rating){ e.rating=r.rating; changed=true; }
       if(r.audienceCount!=null&&r.audienceCount!==(e.audienceCount||0)){ e.audienceCount=r.audienceCount; changed=true; }
-      if(r.kobisMovieCd&&!e.kobisMovieCd){ e.kobisMovieCd=r.kobisMovieCd; e.kobisOpenDt=r.kobisOpenDt; changed=true; }
+      if(r.kobisMovieCd&&!e.kobisMovieCd){ e.kobisMovieCd=r.kobisMovieCd; changed=true; }
+      if(r.kobisOpenDt&&!e.kobisOpenDt){ e.kobisOpenDt=r.kobisOpenDt; changed=true; }
     });
   }catch(e){
     console.warn('라이브러리 갱신 실패:',e.message);

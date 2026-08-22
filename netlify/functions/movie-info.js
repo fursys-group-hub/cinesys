@@ -15,6 +15,7 @@
 const TMDB = 'https://api.themoviedb.org/3';
 const KOBIS = 'https://www.kobis.or.kr/kobisopenapi/webservice/rest';
 const MAX_WEEKS = 14;      // 개봉 후 몇 주까지 주간 순위를 뒤져볼지
+const MAX_WEEK_FETCH = 20; // 한 번에 받아올 주간 순위표 수 (실행 시간 상한)
 const FINAL_AFTER_DAYS = 150; // 이 기간이 지나고 관객수가 있으면 확정된 값으로 보고 조회 생략
 const MAX_ITEMS = 60;
 
@@ -129,43 +130,90 @@ async function tmdbRating(key, tmdbId) {
   return d && d.vote_average != null ? d.vote_average : null;
 }
 
+// 주간 순위표는 그 주의 모든 영화를 담고 있다. 주차별로 한 번만 받아
+// 라이브러리 전체를 대조하면 요청 수가 영화 편수와 무관해진다.
+const mondayOf = (d) => {
+  const x = new Date(d);
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return x;
+};
+
+async function audienceByCode(key, items) {
+  const today = new Date();
+  const need = [];
+  const weekSet = new Set();
+
+  items.forEach(it => {
+    const openDate = parseOpenDt(it.kobisOpenDt);
+    if (!it.kobisMovieCd || !openDate) return;
+    const days = Math.floor((today - openDate) / 86400000);
+    // 상영이 끝나고 값이 이미 있으면 더 오르지 않으므로 조회하지 않는다
+    if (days > FINAL_AFTER_DAYS && Number(it.audienceCount) > 0) return;
+
+    const weeks = [];
+    for (let w = 1; w <= MAX_WEEKS; w++) {
+      const d = new Date(openDate);
+      d.setDate(d.getDate() + w * 7);
+      if (d > today) break;
+      weeks.push(ymd(mondayOf(d)));   // 같은 주는 같은 순위표
+    }
+    if (!weeks.length) return;
+    const uniq = [...new Set(weeks)].reverse();  // 최근 주 우선
+    uniq.forEach(w => weekSet.add(w));
+    need.push({ id: it.id, movieCd: it.kobisMovieCd, weeks: uniq });
+  });
+
+  const found = new Map();
+  if (!need.length) return found;
+
+  const targets = [...weekSet].sort().reverse().slice(0, MAX_WEEK_FETCH);
+  const lists = new Map();
+  await Promise.all(targets.map(async dt => {
+    const data = await getJson(`${KOBIS}/boxoffice/searchWeeklyBoxOfficeList.json?key=${key}&targetDt=${dt}&itemPerPage=50`)
+      .catch(() => null);
+    lists.set(dt, (data && data.boxOfficeResult && data.boxOfficeResult.weeklyBoxOfficeList) || []);
+  }));
+
+  need.forEach(({ id, movieCd, weeks }) => {
+    for (const w of weeks) {                 // 순위에 남아 있던 가장 최근 주차
+      const list = lists.get(w);
+      if (!list) continue;
+      const hit = list.find(m => m.movieCd === movieCd);
+      if (hit && hit.audiAcc != null) { found.set(id, Number(hit.audiAcc)); break; }
+    }
+  });
+  return found;
+}
+
 async function refreshItems(items) {
   const tmdbKey = process.env.TMDB_KEY;
   const kobisKey = process.env.KOBIS_KEY;
-  const today = new Date();
 
-  // 평점은 가벼우니 한꺼번에
-  const ratings = await Promise.all(items.map(it =>
-    (tmdbKey && it.tmdbId) ? tmdbRating(tmdbKey, it.tmdbId).catch(() => null) : Promise.resolve(null)
-  ));
+  // 평점(편당 1회)과 관객수(주차별 공용)를 동시에 진행
+  const [ratings, byCode] = await Promise.all([
+    Promise.all(items.map(it =>
+      (tmdbKey && it.tmdbId) ? tmdbRating(tmdbKey, it.tmdbId).catch(() => null) : Promise.resolve(null)
+    )),
+    kobisKey ? audienceByCode(kobisKey, items).catch(() => new Map()) : Promise.resolve(new Map()),
+  ]);
 
+  // KOBIS 코드가 없는 항목만 제목으로 따로 찾는다 (보통 없거나 한두 건)
   const results = [];
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
     const out = { id: it.id };
     if (ratings[i] != null) out.rating = ratings[i];
+    if (byCode.has(it.id)) out.audienceCount = byCode.get(it.id);
 
-    if (kobisKey) {
+    if (kobisKey && !it.kobisMovieCd && it.title) {
       try {
-        const openDate = parseOpenDt(it.kobisOpenDt);
-        if (it.kobisMovieCd && openDate) {
-          const days = Math.floor((today - openDate) / 86400000);
-          // 상영이 끝나고 값이 이미 있으면 더 오르지 않으므로 조회하지 않는다
-          if (!(days > FINAL_AFTER_DAYS && Number(it.audienceCount) > 0)) {
-            const acc = await weeklyAcc(kobisKey, it.kobisMovieCd, openDate);
-            if (acc != null) out.audienceCount = acc;
-          }
-        } else if (it.title) {
-          const r = await resolveAudience(kobisKey, it.title, it.year);
-          if (r) {
-            out.kobisMovieCd = r.movieCd;
-            out.kobisOpenDt = r.openDt;
-            if (r.audiAcc != null) out.audienceCount = r.audiAcc;
-          }
+        const r = await resolveAudience(kobisKey, it.title, it.year);
+        if (r) {
+          out.kobisMovieCd = r.movieCd;
+          out.kobisOpenDt = r.openDt;
+          if (r.audiAcc != null) out.audienceCount = r.audiAcc;
         }
-      } catch (e) {
-        out.error = e.message;
-      }
+      } catch (e) { out.error = e.message; }
     }
     results.push(out);
   }
@@ -214,8 +262,6 @@ async function route(event) {
     return json(200, {
       audience: null,
       키확인: kp.ok ? '정상' : kp.reason,
-      요청주소: maskKey(searchUrl),
-      응답: p.raw,
       detail: `KOBIS 제목 검색 결과 ${lst.totCnt != null ? lst.totCnt + '건' : '알 수 없음'}`,
       candidates: (lst.movieList || []).slice(0, 5).map(m => ({ movieNm: m.movieNm, movieCd: m.movieCd, openDt: m.openDt })),
     });
