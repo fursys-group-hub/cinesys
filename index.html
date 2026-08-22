@@ -3471,9 +3471,12 @@ async function fetchKOBISAudience(title, year){
   }catch(e){ console.warn('KOBIS:',e.message); return null; }
 }
 
+/* 라이브러리 평점·관객수 갱신.
+   결과를 돌려줘서 버튼이 "무엇이 일어났는지" 알릴 수 있게 한다.
+   → {updated, ratings, audiences, error} */
 async function refreshLibraryLiveData(){
-  if(!library.length) return;
-  let changed=false;
+  if(!library.length) return {updated:0, ratings:0, audiences:0};
+  let changed=false, updated=0, ratings=0, audiences=0;
   try{
     const items=library.map(e=>({
       id:e.id, tmdbId:e.tmdbId||null, kobisMovieCd:e.kobisMovieCd||null,
@@ -3483,16 +3486,21 @@ async function refreshLibraryLiveData(){
     const {results=[]}=await proxyJson('movie-info',{items});
     results.forEach(r=>{
       const e=library.find(x=>x.id===r.id); if(!e) return;
-      if(r.rating!=null&&r.rating!==e.rating){ e.rating=r.rating; changed=true; }
-      if(r.audienceCount!=null&&r.audienceCount!==(e.audienceCount||0)){ e.audienceCount=r.audienceCount; changed=true; }
-      if(r.kobisMovieCd&&!e.kobisMovieCd){ e.kobisMovieCd=r.kobisMovieCd; changed=true; }
-      if(r.kobisOpenDt&&!e.kobisOpenDt){ e.kobisOpenDt=r.kobisOpenDt; changed=true; }
+      if(r.rating!=null) ratings++;
+      if(r.audienceCount!=null) audiences++;
+      let hit=false;
+      if(r.rating!=null&&r.rating!==e.rating){ e.rating=r.rating; hit=true; }
+      if(r.audienceCount!=null&&r.audienceCount!==(e.audienceCount||0)){ e.audienceCount=r.audienceCount; hit=true; }
+      if(r.kobisMovieCd&&!e.kobisMovieCd){ e.kobisMovieCd=r.kobisMovieCd; hit=true; }
+      if(r.kobisOpenDt&&!e.kobisOpenDt){ e.kobisOpenDt=r.kobisOpenDt; hit=true; }
+      if(hit){ changed=true; updated++; }
     });
   }catch(e){
     console.warn('라이브러리 갱신 실패:',e.message);
-    return; // 조용히 넘어감 — 저장된 값이 그대로 표시된다
+    return {updated:0, ratings:0, audiences:0, error:e.message};
   }
   if(changed){renderLibrary();saveLibrary();}
+  return {updated, ratings, audiences};
 }
 
 async function tmdbSearch(q){
@@ -3664,10 +3672,20 @@ document.addEventListener('click',e=>{
 document.getElementById('addLibMovieBtn').onclick=()=>openAddLibraryModal();
 document.getElementById('refreshLibraryBtn').onclick=async function(){
   const btn=this;
-  btn.disabled=true;btn.textContent='↻ 새로고침 중…';
-  await refreshLibraryLiveData();
-  btn.textContent='↻ 완료';
-  setTimeout(()=>{btn.disabled=false;btn.textContent='↻ 새로고침';},1500);
+  btn.disabled=true;btn.textContent='↻ 조회 중…';
+  const r=await refreshLibraryLiveData();
+  // 무엇이 일어났는지 알려준다 — 예전에는 실패해도 "완료"만 떴다
+  if(r.error){
+    btn.textContent='↻ 실패';
+    toast(`갱신 실패 — ${r.error}`);
+  }else if(r.updated){
+    btn.textContent='↻ 완료';
+    toast(`${r.updated}편의 정보를 갱신했습니다 ✓`);
+  }else{
+    btn.textContent='↻ 완료';
+    toast(`모두 최신입니다 — 평점 ${r.ratings}편·관객수 ${r.audiences}편 확인`);
+  }
+  setTimeout(()=>{btn.disabled=false;btn.textContent='↻ 새로고침';},1800);
 };
 document.getElementById('addMemberBtn').onclick=addMember;
 document.getElementById('reviewMovie').onchange=()=>{drawWheel();renderReviewerBoard();};
