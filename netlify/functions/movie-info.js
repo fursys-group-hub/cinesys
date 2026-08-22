@@ -199,7 +199,15 @@ async function route(event) {
     const p = await probe(`${KOBIS}/movie/searchMovieList.json?key=${key}&movieNm=${encodeURIComponent(String(title || ''))}`
       + `&openStartDt=${yr}&openEndDt=${yr ? String(Number(yr) + 1) : ''}&itemPerPage=5`);
     if (!p.ok) return json(502, { error: `KOBIS 조회 실패 — ${p.reason}` });
-    return json(200, { audience: await resolveAudience(key, String(title || ''), year) });
+    const found = await resolveAudience(key, String(title || ''), year);
+    if (found) return json(200, { audience: found });
+    // 결과가 없으면 왜 없는지 알 수 있게 KOBIS가 돌려준 내용을 함께 전달
+    const lst = (p.data && p.data.movieListResult) || {};
+    return json(200, {
+      audience: null,
+      detail: `KOBIS 검색 결과 ${lst.totCnt != null ? lst.totCnt + '건' : '알 수 없음'}`,
+      candidates: (lst.movieList || []).slice(0, 5).map(m => ({ movieNm: m.movieNm, movieCd: m.movieCd, openDt: m.openDt })),
+    });
   }
 
   if (Array.isArray(body.items)) {
