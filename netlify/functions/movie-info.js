@@ -63,13 +63,16 @@ async function probe(url) {
     const text = await r.text();
     let data = null;
     try { data = JSON.parse(text); } catch (e) {}
-    if (data && data.faultInfo) return { ok: false, reason: `KOBIS: ${data.faultInfo.message || ''} (${data.faultInfo.errorCode || ''})` };
-    if (!r.ok) return { ok: false, reason: `TMDB ${r.status}: ${(data && data.status_message) || text.slice(0, 120)}` };
-    return { ok: true, data };
+    const raw = text.slice(0, 200);
+    if (data && data.faultInfo) return { ok: false, raw, reason: `KOBIS: ${data.faultInfo.message || ''} (${data.faultInfo.errorCode || ''})` };
+    if (!r.ok) return { ok: false, raw, reason: `TMDB ${r.status}: ${(data && data.status_message) || text.slice(0, 120)}` };
+    return { ok: true, data, raw };
   } catch (e) {
     return { ok: false, reason: e.message };
   }
 }
+// 진단용 — 키는 가린다
+const maskKey = (u) => String(u).replace(/key=[^&]*/, 'key=***');
 
 const ymd = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
 const parseOpenDt = (s) => {
@@ -196,8 +199,9 @@ async function route(event) {
     const { title, year } = body.audience;
     const yr = year ? String(year) : '';
     // 키 문제인지 검색 결과가 없는 것인지 구분해서 알려준다
-    const p = await probe(`${KOBIS}/movie/searchMovieList.json?key=${key}&movieNm=${encodeURIComponent(String(title || ''))}`
-      + `&openStartDt=${yr}&openEndDt=${yr ? String(Number(yr) + 1) : ''}&itemPerPage=5`);
+    const searchUrl = `${KOBIS}/movie/searchMovieList.json?key=${key}&movieNm=${encodeURIComponent(String(title || ''))}`
+      + `&openStartDt=${yr}&openEndDt=${yr ? String(Number(yr) + 1) : ''}&itemPerPage=5`;
+    const p = await probe(searchUrl);
     if (!p.ok) return json(502, { error: `KOBIS 조회 실패 — ${p.reason}` });
     const found = await resolveAudience(key, String(title || ''), year);
     if (found) return json(200, { audience: found });
@@ -210,6 +214,8 @@ async function route(event) {
     return json(200, {
       audience: null,
       키확인: kp.ok ? '정상' : kp.reason,
+      요청주소: maskKey(searchUrl),
+      응답: p.raw,
       detail: `KOBIS 제목 검색 결과 ${lst.totCnt != null ? lst.totCnt + '건' : '알 수 없음'}`,
       candidates: (lst.movieList || []).slice(0, 5).map(m => ({ movieNm: m.movieNm, movieCd: m.movieCd, openDt: m.openDt })),
     });
