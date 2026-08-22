@@ -50,17 +50,31 @@ function corsHeaders(headers) {
   };
 }
 
-const getJson = async (url) => {
-  const r = await fetch(url);
+const getJson = async (url, opts) => {
+  const r = await fetch(url, opts);
   if (!r.ok) return null;
   return r.json().catch(() => null);
 };
 
+/* TMDB 키는 두 종류다.
+   - API Key (v3): 주소에 api_key=로 붙인다
+   - Access Token (v4): Authorization: Bearer 헤더로 보낸다
+   어느 쪽을 넣어도 동작하게 값의 모양을 보고 판단한다. */
+function tmdbReq(path, params) {
+  const key = process.env.TMDB_KEY || '';
+  const u = new URL(TMDB + path);
+  Object.entries(params || {}).forEach(([k, v]) => u.searchParams.set(k, String(v)));
+  const opts = { headers: { accept: 'application/json' } };
+  if (key.startsWith('eyJ') || key.length > 60) opts.headers.Authorization = `Bearer ${key}`;
+  else u.searchParams.set('api_key', key);
+  return [u.toString(), opts];
+}
+
 /* 조회가 실패했을 때 원인을 알 수 있게 응답을 그대로 살펴본다.
    TMDB는 status_message, KOBIS는 faultInfo.message로 사유를 알려준다. */
-async function probe(url) {
+async function probe(url, opts) {
   try {
-    const r = await fetch(url);
+    const r = await fetch(url, opts);
     const text = await r.text();
     let data = null;
     try { data = JSON.parse(text); } catch (e) {}
@@ -125,8 +139,8 @@ async function resolveAudience(key, title, year) {
   return { movieCd, openDt, audiAcc: await weeklyAcc(key, movieCd, openDate) };
 }
 
-async function tmdbRating(key, tmdbId) {
-  const d = await getJson(`${TMDB}/movie/${tmdbId}?api_key=${key}&language=ko-KR`);
+async function tmdbRating(tmdbId) {
+  const d = await getJson(...tmdbReq(`/movie/${tmdbId}`, { language: 'ko-KR' }));
   return d && d.vote_average != null ? d.vote_average : null;
 }
 
@@ -192,7 +206,7 @@ async function refreshItems(items) {
   // 평점(편당 1회)과 관객수(주차별 공용)를 동시에 진행
   const [ratings, byCode] = await Promise.all([
     Promise.all(items.map(it =>
-      (tmdbKey && it.tmdbId) ? tmdbRating(tmdbKey, it.tmdbId).catch(() => null) : Promise.resolve(null)
+      (tmdbKey && it.tmdbId) ? tmdbRating(it.tmdbId).catch(() => null) : Promise.resolve(null)
     )),
     kobisKey ? audienceByCode(kobisKey, items).catch(() => new Map()) : Promise.resolve(new Map()),
   ]);
@@ -236,7 +250,7 @@ async function route(event) {
     if (!key) return json(503, { error: 'TMDB_KEY 환경변수가 설정되지 않았습니다' });
     const q = body.search.trim();
     if (!q) return json(400, { error: '검색어가 없습니다' });
-    const p = await probe(`${TMDB}/search/movie?api_key=${key}&query=${encodeURIComponent(q)}&language=ko-KR`);
+    const p = await probe(...tmdbReq('/search/movie', { query: q, language: 'ko-KR' }));
     if (!p.ok) return json(502, { error: `TMDB 조회 실패 — ${p.reason}` });
     return json(200, { results: (p.data && p.data.results) || [] });
   }
