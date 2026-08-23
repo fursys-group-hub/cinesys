@@ -1152,7 +1152,27 @@ function fixCombinedTimes(mo){
 }
 
 /* ============== Init ============== */
+/* 앱 버전 확인 — 브라우저가 예전 화면을 붙들고 있으면 알림·발송이 옛 방식으로
+   동작해 조용히 실패한다. 최신 버전을 쓰는 기기가 번호를 기록해 두고,
+   낡은 기기는 주소에 ?v= 를 붙여 새로 받아온다. */
+const APP_VERSION = 20260824;
+const KEY_APP_VER = 'cns-app-version';
+async function checkAppVersion(){
+  try{
+    const remote = Number(await sGet(KEY_APP_VER, 0)) || 0;
+    if(APP_VERSION > remote){ await sSet(KEY_APP_VER, APP_VERSION); return false; }
+    if(remote > APP_VERSION){
+      // 이미 한 번 시도했으면 다시 새로고침하지 않는다 (무한 반복 방지)
+      if(new URLSearchParams(location.search).get('v') === String(remote)) return false;
+      location.replace(`${location.pathname}?v=${remote}`);
+      return true; // 곧 페이지가 다시 열린다
+    }
+  }catch(e){ console.warn('버전 확인 실패:', e.message); }
+  return false;
+}
+
 async function init(){
+  if(await checkAppVersion()) return; // 낡은 화면 — 새로 받아오는 중
   const ver = await sGet(KEY_VER, 0);
   members = await sGet(KEY_MEMBERS, null);
   monthIndex = await sGet(KEY_INDEX, null);
