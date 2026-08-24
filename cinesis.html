@@ -1883,6 +1883,13 @@ function buildMemberBookingMessage(m){
   L.push(`일시: ${formatDateKo(activityDate())}${startTime?` ${startTime}`:''}${b.endTime?` ~ ${b.endTime}`:''}`);
   if(b.screen) L.push(`상영관: ${b.screen}`);
   L.push(`좌석: ${seat||'배정 후 다시 안내드립니다'}`);
+  // 영화비를 알려주면 회원이 남는 지원금으로 간식을 계획할 수 있다
+  const cost=movieCostOf(m.id);
+  if(cost>0){
+    const per=Number((cur.finance||{}).perPerson)||30000;
+    L.push(`영화비: ${fmt(cost)}원`);
+    if(per>cost) L.push(`간식 가능 금액: ${fmt(per-cost)}원 (1인 지원금 ${fmt(per)}원 기준)`);
+  }
   if(b.bookingNo) L.push(`예매번호: ${b.bookingNo}`);
   if(mates.length) L.push(`함께 보는 회원: ${mates.map(x=>x.name).join(', ')}`);
   if((b.note||'').trim()){ L.push(''); L.push(b.note.trim()); }
@@ -2105,12 +2112,40 @@ function movieCostSlotKeys(){
   });
   return keys;
 }
+/* 영화비 기입 방식은 두 가지다.
+   - 균등: 슬롯 총액(amount)을 참석 인원으로 나눈다
+   - 인원별: perMember에 회원별 금액을 적는다 (수퍼플렉스처럼 좌석마다 값이 다를 때)
+   perMode 표시로 구분한다 (금액을 0으로 지워도 방식이 유지되도록). */
+const isPerMember = c => !!(c && (c.perMode || (c.perMember && Object.keys(c.perMember).length)));
+function slotTotal(c){
+  if(isPerMember(c)) return Object.values(c.perMember||{}).reduce((s,v)=>s+(Number(v)||0),0);
+  return Number(c&&c.amount)||0;
+}
+// 한 슬롯에 속한 참석자 id 목록 (정산과 같은 기준: records 전체)
+function slotMemberIds(movieId, movieTime){
+  return Object.entries(cur.records||{})
+    .filter(([,r])=>r.attending&&r.movieId===movieId&&(r.movieTime||'')===(movieTime||''))
+    .map(([id])=>id);
+}
+function findMovieCost(movieId, movieTime){
+  return (cur.finance.movieCosts||[]).find(c=>c.movieId===movieId&&(c.movieTime||'')===(movieTime||''));
+}
+// 회원 한 명이 부담하는 영화비 — 안내 DM과 정산이 같은 값을 쓰도록 한 곳에 둔다
+function movieCostOf(memberId){
+  const r=(cur.records||{})[memberId];
+  if(!r||!r.attending||!r.movieId) return 0;
+  const c=findMovieCost(r.movieId, r.movieTime);
+  if(!c) return 0;
+  if(isPerMember(c)) return Number(c.perMember[memberId])||0;
+  const n=slotMemberIds(r.movieId, r.movieTime).length;
+  return n?Math.round((Number(c.amount)||0)/n):0;
+}
 /* 표에 보이지 않는 유령 항목(참석자가 빠진 슬롯 등)은 합산에서 제외 */
 function calcMovieTotal(){
   const valid=movieCostSlotKeys();
   return (cur.finance.movieCosts||[]).reduce((s,it)=>{
-    if(!it.movieId) return s+(Number(it.amount)||0); // 구버전 통합 기록은 그대로 반영
-    return valid.has(`${it.movieId}|${it.movieTime||''}`) ? s+(Number(it.amount)||0) : s;
+    if(!it.movieId) return s+slotTotal(it); // 구버전 통합 기록은 그대로 반영
+    return valid.has(`${it.movieId}|${it.movieTime||''}`) ? s+slotTotal(it) : s;
   },0);
 }
 function calcPartyTotal(){
@@ -2227,17 +2262,45 @@ function renderMovieCosts(){
   slots.forEach(s=>{
     const isFirst = s.movieId !== prevMovieId;
     prevMovieId = s.movieId;
-    const saved = (cur.finance.movieCosts||[]).find(c=>c.movieId===s.movieId&&(c.movieTime||'')===s.movieTime);
+    const saved = findMovieCost(s.movieId, s.movieTime);
+    const perMode = isPerMember(saved);
     const amt = saved ? saved.amount : '';
+    const admin = isAdmin();
+    // 좌석마다 금액이 다른 상영(수퍼플렉스 등)은 인원별로 적을 수 있다
+    const toggle = admin
+      ? `<button class="btn xs ghost" data-act="per-toggle" style="padding:2px 7px;font-size:10px;margin-left:6px;white-space:nowrap;">${perMode?'균등으로':'인원별로'}</button>`
+      : '';
     h += `<tr data-movie="${esc(s.movieId)}" data-time="${esc(s.movieTime)}" title="${s.attendees}">
       <td class="mcr-movie">${isFirst?'🎬 '+esc(s.mv.title):''}</td>
       <td class="mcr-time">${s.movieTime||'-'}</td>
       <td class="mcr-cnt" style="font-size:12.5px;">${esc(s.attendees)}</td>
       <td class="mcr-amt">
-        <input type="text" inputmode="numeric" data-act="movie-amt" value="${amt?Number(amt).toLocaleString('ko-KR'):''}" oninput="fmtNumInput(this)"${isAdmin()?'':' disabled'}>
-        <span class="unit">원</span>
+        ${perMode
+          ? `<span style="font-weight:600;">${fmt(slotTotal(saved))}</span><span class="unit">원</span>${toggle}
+             <div style="font-size:10.5px;color:var(--ink3);margin-top:2px;">인원별 합계</div>`
+          : `<input type="text" inputmode="numeric" data-act="movie-amt" value="${amt?Number(amt).toLocaleString('ko-KR'):''}" oninput="fmtNumInput(this)"${admin?'':' disabled'}>
+             <span class="unit">원</span>${toggle}`}
       </td>
     </tr>`;
+    if(perMode){
+      // 회원별 입력 줄 — 좌석 번호를 함께 보여줘 어느 자리 값인지 알 수 있게 한다
+      slotMemberIds(s.movieId, s.movieTime)
+        .map(id=>members.find(m=>m.id===id)).filter(Boolean)
+        .sort((a,b)=>a.name.localeCompare(b.name,'ko'))
+        .forEach(m=>{
+          const seat=((cur.records[m.id]||{}).seat||'').trim();
+          const v=Number(saved.perMember[m.id])||0;
+          h += `<tr data-movie="${esc(s.movieId)}" data-time="${esc(s.movieTime)}" data-member="${esc(m.id)}" style="background:var(--paper2);">
+            <td class="mcr-movie"></td>
+            <td class="mcr-time" style="font-size:11.5px;color:var(--ink3);">${seat?esc(seat):'좌석 미정'}</td>
+            <td class="mcr-cnt" style="font-size:12.5px;padding-left:14px;">${esc(m.name)}</td>
+            <td class="mcr-amt">
+              <input type="text" inputmode="numeric" data-act="member-amt" value="${v?v.toLocaleString('ko-KR'):''}" oninput="fmtNumInput(this)"${admin?'':' disabled'}>
+              <span class="unit">원</span>
+            </td>
+          </tr>`;
+        });
+    }
   });
   h += `</tbody></table>`;
   h += `<div class="cost-total"><span class="lbl">총 영화비</span><span class="amount">${fmt(calcMovieTotal())}원</span></div>`;
@@ -2257,7 +2320,45 @@ function renderMovieCosts(){
           return true;
         });
         if(amt>0) cur.finance.movieCosts.push({id:uid(),movieId,movieTime,amount:amt});
-        saveMonth(); renderFinance();
+        saveMonth(); renderFinance(); renderActivityTable();
+      };
+    });
+    // 인원별 금액 입력
+    box.querySelectorAll('[data-act=member-amt]').forEach(input=>{
+      const row = input.closest('[data-member]');
+      const {movie:movieId, time:movieTime, member:memberId} = row.dataset;
+      input.onchange = ()=>{
+        let c = findMovieCost(movieId, movieTime);
+        if(!c){ c={id:uid(),movieId,movieTime,amount:0,perMember:{}}; cur.finance.movieCosts.push(c); }
+        if(!c.perMember) c.perMember={};
+        const v = getNumVal(input);
+        if(v>0) c.perMember[memberId]=v; else delete c.perMember[memberId];
+        c.amount = slotTotal(c); // 합계를 총액에도 반영해 둔다
+        saveMonth(); renderFinance(); renderActivityTable();
+      };
+    });
+    // 균등 ↔ 인원별 전환
+    box.querySelectorAll('[data-act=per-toggle]').forEach(btn=>{
+      const row = btn.closest('[data-movie]');
+      const movieId = row.dataset.movie;
+      const movieTime = row.dataset.time;
+      btn.onclick = ()=>{
+        let c = findMovieCost(movieId, movieTime);
+        if(!c){ c={id:uid(),movieId,movieTime,amount:0}; cur.finance.movieCosts.push(c); }
+        if(isPerMember(c)){
+          // 균등으로 되돌리기 — 합계를 총액으로 남긴다
+          c.amount = slotTotal(c);
+          delete c.perMember;
+          delete c.perMode;
+        }else{
+          // 인원별로 전환 — 지금 총액을 인원수로 나눠 초기값으로 채운다
+          const ids = slotMemberIds(movieId, movieTime);
+          const per = ids.length ? Math.round((Number(c.amount)||0)/ids.length) : 0;
+          c.perMode = true;
+          c.perMember = {};
+          if(per>0) ids.forEach(id=>{ c.perMember[id]=per; });
+        }
+        saveMonth(); renderFinance(); renderActivityTable();
       };
     });
   }
@@ -2621,20 +2722,22 @@ function settlementData(){
   (cur.finance?.movieCosts||[]).forEach(mc => {
     const key = `${mc.movieId}|${mc.movieTime||''}`;
     if(!screeningMap[key]) screeningMap[key] = {memberIds:[], movieCost:0};
-    screeningMap[key].movieCost = mc.amount || 0;
+    screeningMap[key].movieCost = slotTotal(mc);
+    // 인원별로 적은 슬롯은 각자의 금액을 그대로 쓴다
+    if(isPerMember(mc)) screeningMap[key].perMember = mc.perMember;
   });
 
   const memberMovieCost = {};
   const memberTitles = {};
   members.forEach(m => { memberMovieCost[m.id] = 0; memberTitles[m.id] = []; });
-  Object.entries(screeningMap).forEach(([key, {memberIds, movieCost}]) => {
+  Object.entries(screeningMap).forEach(([key, {memberIds, movieCost, perMember}]) => {
     if(!memberIds.length) return;
     const [movieId] = key.split('|');
     const title = movieTitleMap[movieId] || '';
     const perPerson = Math.round(movieCost / memberIds.length);
     memberIds.forEach(id => {
       if(memberMovieCost[id] !== undefined){
-        memberMovieCost[id] += perPerson;
+        memberMovieCost[id] += perMember ? (Number(perMember[id])||0) : perPerson;
         if(title && !memberTitles[id].includes(title)) memberTitles[id].push(title);
       }
     });
