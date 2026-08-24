@@ -1895,16 +1895,44 @@ function buildMemberBookingMessage(m){
   if((b.note||'').trim()){ L.push(''); L.push(b.note.trim()); }
   return L.join('\n');
 }
+/* 모달의 입력을 한 번에 거둬들인다.
+   상영 공통 정보 + 회원별 좌석 + 회원별 영화비.
+   영화비는 정산 탭과 같은 곳(finance.movieCosts)에 저장되므로 자동으로 연동된다. */
 function collectBookingInputs(){
   if(!bkTarget) return;
   const sc=screeningOf(bkTarget.id); if(!sc) return;
   const b=bookingOf(sc.movieId,sc.time);
   document.querySelectorAll('#modalBox input[data-bk]').forEach(el=>{ b[el.dataset.bk]=el.value.trim(); });
+
+  // 좌석 — 바뀌면 이전 안내는 더 이상 맞지 않다
+  document.querySelectorAll('#modalBox input[data-seat]').forEach(el=>{
+    const id=el.dataset.seat;
+    const v=el.value.trim();
+    const r=rec(id);
+    if((r.seat||'')!==v){ r.seat=v; clearNotice(id); }
+  });
+
+  // 영화비 — 하나라도 적혀 있으면 인원별 금액으로 저장
+  const costInputs=[...document.querySelectorAll('#modalBox input[data-cost]')];
+  if(costInputs.length){
+    const costs={};
+    costInputs.forEach(el=>{ const v=getNumVal(el); if(v>0) costs[el.dataset.cost]=v; });
+    if(!cur.finance.movieCosts) cur.finance.movieCosts=[];
+    let c=findMovieCost(sc.movieId, sc.time);
+    if(Object.keys(costs).length){
+      if(!c){ c={id:uid(),movieId:sc.movieId,movieTime:sc.time,amount:0}; cur.finance.movieCosts.push(c); }
+      c.perMode=true; c.perMember=costs; c.amount=slotTotal(c);
+    }else if(c&&c.perMode){
+      // 전부 지웠으면 인원별 기록도 비운다
+      c.perMember={}; c.amount=0;
+    }
+  }
 }
 // 회원 각자에게 슬랙 DM으로 예매 안내를 보낸다
 async function sendMemberNotices(list){
   collectBookingInputs();
   await saveMonth();
+  renderActivityTable(); renderFinance(); // 좌석·영화비를 함께 적었을 수 있다
   const payload=[], noEmail=[];
   list.forEach(m=>{
     const text=buildMemberBookingMessage(m);
@@ -1972,7 +2000,20 @@ function openMemberBookingModal(memberId){
        <div class="field"><label>예매번호</label><input type="text" data-bk="bookingNo" value="${esc(b.bookingNo||'')}" placeholder="예) 18257291"></div>
        <div class="field"><label>추가 안내 (선택)</label><input type="text" data-bk="note" value="${esc(b.note||'')}" placeholder="예) 상영 10분 전 로비에서 만나요"></div>
      </div>
-     <div style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;margin:12px 0 4px;">${esc(m.name)}님에게 갈 메시지</div>
+     <div style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;margin:14px 0 6px;">좌석 · 영화비 <span style="font-weight:400;letter-spacing:0;text-transform:none;">(여기서 적으면 참석표와 정산탭에 함께 반영됩니다)</span></div>
+     <div style="border:1px solid var(--line);border-radius:5px;overflow:hidden;">
+       ${mates.map((x,i)=>`
+         <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;${i?'border-top:1px solid var(--line);':''}${x.id===m.id?'background:rgba(196,161,85,.10);':''}">
+           <span style="flex:1;font-size:13.5px;${x.id===m.id?'font-weight:700;':''}">${esc(x.name)}</span>
+           <input type="text" data-seat="${esc(x.id)}" value="${esc(((cur.records[x.id]||{}).seat||'').trim())}" placeholder="좌석"
+                  style="width:70px;font-size:13px;padding:5px 7px;border:1px solid var(--line);border-radius:3px;font-family:inherit;">
+           <input type="text" inputmode="numeric" data-cost="${esc(x.id)}" value="${movieCostOf(x.id)?movieCostOf(x.id).toLocaleString('ko-KR'):''}" placeholder="영화비" oninput="fmtNumInput(this)"
+                  style="width:92px;font-size:13px;padding:5px 7px;border:1px solid var(--line);border-radius:3px;font-family:inherit;text-align:right;">
+           <span style="font-size:11.5px;color:var(--ink3);">원</span>
+         </div>`).join('')}
+     </div>
+     <div id="bkCostSum" style="text-align:right;font-size:11.5px;color:var(--ink3);margin-top:5px;"></div>
+     <div style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;margin:14px 0 4px;">${esc(m.name)}님에게 갈 메시지</div>
      <pre id="bkPrev" style="white-space:pre-wrap;font-family:inherit;font-size:12.5px;line-height:1.65;background:var(--paper2);border:1px solid var(--line);border-radius:4px;padding:10px 12px;margin:0;">${esc(buildMemberBookingMessage(m))}</pre>
      <p style="font-size:11.5px;color:var(--ink3);margin-top:8px;">※ DM은 슬랙 봇 설정이 끝난 뒤부터 발송됩니다. 실패하면 회원별 사유가 표시됩니다.</p>
      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;">
@@ -1983,11 +2024,26 @@ function openMemberBookingModal(memberId){
     async()=>{ collectBookingInputs(); closeModal(); await sendMemberNotices([m]); return false; },
     `📨 ${esc(m.name)}님에게 DM`,'primary');
   const prev=document.getElementById('bkPrev');
-  document.querySelectorAll('#modalBox input[data-bk]').forEach(el=>{
-    el.oninput=()=>{ collectBookingInputs(); if(prev) prev.textContent=buildMemberBookingMessage(m); };
-  });
+  const sumBox=document.getElementById('bkCostSum');
+  const refresh=()=>{
+    collectBookingInputs();
+    if(prev) prev.textContent=buildMemberBookingMessage(m);
+    if(sumBox){
+      const total=mates.reduce((s,x)=>s+movieCostOf(x.id),0);
+      sumBox.textContent=total?`영화비 합계 ${fmt(total)}원`:'';
+    }
+  };
+  document.querySelectorAll('#modalBox input[data-bk], #modalBox input[data-seat], #modalBox input[data-cost]')
+    .forEach(el=>{ el.oninput=refresh; });
+  refresh();
   const saveBtn=document.getElementById('bkSaveOnly');
-  if(saveBtn) saveBtn.onclick=async()=>{ collectBookingInputs(); await saveMonth(); toast('예매 정보를 저장했습니다 ✓'); closeModal(); };
+  if(saveBtn) saveBtn.onclick=async()=>{
+    collectBookingInputs();
+    await saveMonth();
+    renderActivityTable(); renderFinance(); // 좌석·영화비가 바로 반영되도록
+    toast('예매 정보를 저장했습니다 ✓');
+    closeModal();
+  };
   const matesBtn=document.getElementById('bkSendMates');
   if(matesBtn) matesBtn.onclick=async()=>{ collectBookingInputs(); closeModal(); await sendMemberNotices(mates); };
 }
