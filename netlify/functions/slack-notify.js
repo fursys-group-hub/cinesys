@@ -31,6 +31,16 @@ const json = (statusCode, obj) => ({
 const allowedOrigins = () =>
   (process.env.ALLOWED_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
 
+/* 허용 출처는 와일드카드를 쓸 수 있다 — 예: https://*.fursys.com
+   사내 포털이 여러 호스트로 서비스하는 경우를 하나로 담기 위함 */
+function originMatches(pattern, origin) {
+  if (!origin) return false;
+  if (pattern === origin) return true;
+  if (!pattern.includes('*')) return false;
+  const re = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]+') + '$');
+  return re.test(origin);
+}
+
 // 이 함수는 인터넷에 열려 있으므로, 호출 출처를 확인해 오용을 조금이라도 줄인다.
 // (완전한 방어는 아니다 — 제대로 막으려면 앱에 로그인 기능이 있어야 한다)
 function originAllowed(headers) {
@@ -38,7 +48,7 @@ function originAllowed(headers) {
   if (!allowed.length) return true; // 미설정 시 통과
   const origin = headers.origin || '';
   const referer = headers.referer || '';
-  return allowed.some(a => origin === a || referer.startsWith(a));
+  return allowed.some(a => originMatches(a, origin) || (!a.includes('*') && referer.startsWith(a)));
 }
 
 // 앱이 다른 도메인(회사 허브 등)에서 서비스될 때를 위한 교차 출처 허용.
@@ -47,7 +57,7 @@ function corsHeaders(headers) {
   const origin = (headers.origin || '').trim();
   if (!origin) return {};
   const allowed = allowedOrigins();
-  if (allowed.length && !allowed.includes(origin)) return {};
+  if (allowed.length && !allowed.some(a => originMatches(a, origin))) return {};
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',

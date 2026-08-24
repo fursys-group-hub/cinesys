@@ -28,19 +28,28 @@ const json = (statusCode, obj) => ({
 const allowedOrigins = () =>
   (process.env.ALLOWED_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
 
+/* 허용 출처는 와일드카드를 쓸 수 있다 — 예: https://*.fursys.com */
+function originMatches(pattern, origin) {
+  if (!origin) return false;
+  if (pattern === origin) return true;
+  if (!pattern.includes('*')) return false;
+  const re = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]+') + '$');
+  return re.test(origin);
+}
+
 function originAllowed(headers) {
   const allowed = allowedOrigins();
   if (!allowed.length) return true;
   const origin = headers.origin || '';
   const referer = headers.referer || '';
-  return allowed.some(a => origin === a || referer.startsWith(a));
+  return allowed.some(a => originMatches(a, origin) || (!a.includes("*") && referer.startsWith(a)));
 }
 
 function corsHeaders(headers) {
   const origin = (headers.origin || '').trim();
   if (!origin) return {};
   const allowed = allowedOrigins();
-  if (allowed.length && !allowed.includes(origin)) return {};
+  if (allowed.length && !allowed.some(a => originMatches(a, origin))) return {};
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
