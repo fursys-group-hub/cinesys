@@ -8,6 +8,10 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
+# 회원 브라우저가 슬랙으로 바로 보내지 못한 알림을 서버가 주기적으로 보완 발송
+[functions."notify-sweep"]
+  schedule = "*/3 * * * *"
+
 # 앱이 단일 HTML 파일이라, 브라우저가 예전 버전을 붙들고 있으면
 # 알림·발송 로직이 옛 방식으로 동작한다. 접속할 때마다 새 버전을 확인하게 한다.
 [[headers]]

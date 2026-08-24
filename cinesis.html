@@ -824,11 +824,15 @@ function notifyRecordSubmit(m,r){
     const text=`🎬 [씨네시스 ${curId}] ${m.name} — ${s.att}`+(r.attending===true?` · ${s.movie} ${s.time} · 뒷풀이 ${s.party}`:'');
     // 슬랙 전송이 실패하면 알림 기록에 남겨 🔔 목록에서 드러나게 한다
     // (예전 버전이 캐시된 브라우저처럼, 조용히 실패하면 총무가 알 수 없다)
-    slackPost(text).catch(e=>{
+    // 성공하면 표시를 남긴다 — 서버의 보완 발송이 같은 알림을 다시 보내지 않도록
+    slackPost(text).then(()=>{
+      try{ ref.update({slackSent:true}); }catch(_){}
+    }).catch(e=>{
       console.error('슬랙 알림 실패',e);
       // 접속 출처와 앱 버전을 함께 남긴다 — 어느 화면에서 실패했는지 알아야 고칠 수 있다
       const detail=`${String((e&&e.message)||'전송 실패')} · 출처 ${location.origin} · v${APP_VERSION}`;
       try{ ref.update({slackError:detail}); }catch(_){}
+      // 여기서 실패해도 서버가 몇 분 안에 대신 보낸다 (notify-sweep)
     });
   }catch(e){ console.error('notify fail',e); }
 }
@@ -876,7 +880,8 @@ function openNotifPanel(){
     const when=d?`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`:'-';
     const attColor=n.att==='참석 O'?'var(--sage)':n.att==='불참 X'?'var(--burgundy)':'var(--ink3)';
     const detail=n.att==='참석 O'?` · ${esc(n.movie)} <b style="font-family:'Montserrat';font-size:12px;">${esc(n.time)}</b> · 뒷풀이 ${esc(n.party)}`:'';
-    const slackWarn=n.slackError
+    // 서버가 대신 보내면 slackSent가 남아 배지가 사라진다
+    const slackWarn=(n.slackError&&!n.slackSent)
       ? `<span class="pill no xs" style="margin-left:6px;" title="${esc(n.slackError)}">슬랙 미발송</span>`
       : '';
     return `<div style="padding:9px 2px;border-bottom:1px solid var(--line);">
