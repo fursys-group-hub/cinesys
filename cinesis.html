@@ -1823,8 +1823,13 @@ function renderConfirmSection(){
   const section = document.getElementById('confirmSection');
   if(!section || !cur) return;
   if(cur.confirmed){
-    section.innerHTML = '<div style="display:inline-flex;align-items:center;gap:8px;background:rgba(90,138,74,.14);color:#4f6047;border:1px solid #c1d4b8;border-radius:4px;padding:10px 20px;font-size:13.5px;font-weight:600;">✅ 참석 확정됨 &nbsp;·&nbsp; 우측 룰렛을 돌려보세요!</div>'
-      + (isAdmin() ? '<div style="margin-top:10px;"><button class="btn ghost sm" id="unconfirmBtn">🔓 확정 해제</button><span style="margin-left:8px;font-size:12px;color:var(--ink3);">참석을 다시 수정하려면 확정을 해제하세요. (룰렛 결과 초기화)</span></div>' : '');
+    // 룰렛은 더 이상 쓰지 않는다 — 지난 달 기록을 볼 때만 옛 문구를 남긴다
+    const newSys = isNewReviewSystem();
+    const doneMsg = newSys ? '✅ 참석 확정됨' : '✅ 참석 확정됨 &nbsp;·&nbsp; 우측 룰렛을 돌려보세요!';
+    const resetHint = newSys ? '참석을 다시 수정하려면 확정을 해제하세요. (후기 순서 재계산)'
+                             : '참석을 다시 수정하려면 확정을 해제하세요. (룰렛 결과 초기화)';
+    section.innerHTML = `<div style="display:inline-flex;align-items:center;gap:8px;background:rgba(90,138,74,.14);color:#4f6047;border:1px solid #c1d4b8;border-radius:4px;padding:10px 20px;font-size:13.5px;font-weight:600;">${doneMsg}</div>`
+      + (isAdmin() ? `<div style="margin-top:10px;"><button class="btn ghost sm" id="unconfirmBtn">🔓 확정 해제</button><span style="margin-left:8px;font-size:12px;color:var(--ink3);">${resetHint}</span></div>` : '');
     const ub = document.getElementById('unconfirmBtn');
     if(ub) ub.onclick = unconfirmAttendance;
   } else if(isAdmin()){
@@ -2117,8 +2122,9 @@ async function confirmAttendance(){
       <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);">
         <span>🍻 뒷풀이</span><strong>${afterpartyCount}명</strong></div>
       <div style="margin-top:14px;padding:10px 14px;background:rgba(139,58,58,.07);border:1px solid rgba(139,58,58,.2);border-radius:6px;font-size:12.5px;color:#8b3a3a;line-height:1.6;">
-        🔒 확정하면 <strong>룰렛 당첨자</strong>가 지금 데이터로 고정됩니다.<br>
-        참석·뒷풀이는 확정 후에도 수정 가능하지만, 룰렛 결과는 바뀌지 않아요.
+        ${isNewReviewSystem()
+          ? '🔒 확정하면 <strong>후기 담당자</strong>가 지금 데이터로 정해집니다.<br>참석·뒷풀이는 확정 후에도 수정 가능하지만, 후기 담당자는 바뀌지 않아요.'
+          : '🔒 확정하면 <strong>룰렛 당첨자</strong>가 지금 데이터로 고정됩니다.<br>참석·뒷풀이는 확정 후에도 수정 가능하지만, 룰렛 결과는 바뀌지 않아요.'}
       </div>
     </div>`;
 
@@ -2144,7 +2150,7 @@ async function confirmAttendance(){
     cur.prevMonthExclusions = prevReviewerIds;
     await saveMonth();
     renderActivity();
-    toast('참석 확정 완료! 이제 룰렛을 돌려보세요 🎉');
+    toast(isNewReviewSystem()?'참석 확정 완료! 후기 담당자가 정해졌습니다 🎉':'참석 확정 완료! 이제 룰렛을 돌려보세요 🎉');
   }, '확정하기', 'primary');
 }
 
@@ -2155,8 +2161,9 @@ async function unconfirmAttendance(){
     <div style="font-size:13.5px;color:var(--ink2);line-height:1.7;">
       확정을 해제하면 참석·영화·뒷풀이를 다시 수정할 수 있습니다.<br>
       <div style="margin-top:12px;padding:10px 14px;background:rgba(139,58,58,.07);border:1px solid rgba(139,58,58,.2);border-radius:6px;font-size:12.5px;color:#8b3a3a;line-height:1.6;">
-        🔒 단, <strong>룰렛 당첨자·공개 결과</strong>는 초기화됩니다.<br>
-        재확정 시 그 시점 데이터로 당첨자가 다시 결정됩니다.
+        ${isNewReviewSystem()
+          ? '🔒 단, <strong>후기 담당자</strong>는 초기화됩니다.<br>재확정 시 그 시점 데이터로 담당자가 다시 정해집니다.'
+          : '🔒 단, <strong>룰렛 당첨자·공개 결과</strong>는 초기화됩니다.<br>재확정 시 그 시점 데이터로 당첨자가 다시 결정됩니다.'}
       </div>
     </div>`;
   openModal('확정 해제하기', body, async () => {
