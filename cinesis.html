@@ -1888,7 +1888,7 @@ function buildMemberBookingMessage(m){
   if(cost>0){
     const per=Number((cur.finance||{}).perPerson)||30000;
     L.push(`영화비: ${fmt(cost)}원`);
-    if(per>cost) L.push(`간식 가능 금액: ${fmt(per-cost)}원 (1인 지원금 ${fmt(per)}원 기준)`);
+    if(per>cost) L.push(`간식 가능 금액: ${fmt(per-cost)}원`);
   }
   if(b.bookingNo) L.push(`예매번호: ${b.bookingNo}`);
   if(mates.length) L.push(`함께 보는 회원: ${mates.map(x=>x.name).join(', ')}`);
@@ -2007,12 +2007,18 @@ function openMemberBookingModal(memberId){
            <span style="flex:1;font-size:13.5px;${x.id===m.id?'font-weight:700;':''}">${esc(x.name)}</span>
            <input type="text" data-seat="${esc(x.id)}" value="${esc(((cur.records[x.id]||{}).seat||'').trim())}" placeholder="좌석"
                   style="width:70px;font-size:13px;padding:5px 7px;border:1px solid var(--line);border-radius:3px;font-family:inherit;">
-           <input type="text" inputmode="numeric" data-cost="${esc(x.id)}" value="${movieCostOf(x.id)?movieCostOf(x.id).toLocaleString('ko-KR'):''}" placeholder="영화비" oninput="fmtNumInput(this)"
+           <input type="text" inputmode="numeric" data-cost="${esc(x.id)}" value="${recordedCostOf(x.id)?recordedCostOf(x.id).toLocaleString('ko-KR'):''}" placeholder="영화비" oninput="fmtNumInput(this)"
                   style="width:92px;font-size:13px;padding:5px 7px;border:1px solid var(--line);border-radius:3px;font-family:inherit;text-align:right;">
            <span style="font-size:11.5px;color:var(--ink3);">원</span>
          </div>`).join('')}
      </div>
      <div id="bkCostSum" style="text-align:right;font-size:11.5px;color:var(--ink3);margin-top:5px;"></div>
+     ${(()=>{ // 정산탭에 총액으로만 적혀 있으면 알려준다 (여기 입력하면 인원별로 바뀜)
+       const c=findMovieCost(sc.movieId, sc.time);
+       return (c&&!isPerMember(c)&&Number(c.amount)>0)
+         ? `<div style="font-size:11.5px;color:var(--sepia-hi);margin-top:4px;">이 상영은 정산탭에 총액 ${fmt(c.amount)}원으로 적혀 있습니다. 위에 금액을 넣으면 인원별 금액으로 바뀝니다.</div>`
+         : '';
+     })()}
      <div style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;margin:14px 0 4px;">${esc(m.name)}님에게 갈 메시지</div>
      <pre id="bkPrev" style="white-space:pre-wrap;font-family:inherit;font-size:12.5px;line-height:1.65;background:var(--paper2);border:1px solid var(--line);border-radius:4px;padding:10px 12px;margin:0;">${esc(buildMemberBookingMessage(m))}</pre>
      <p style="font-size:11.5px;color:var(--ink3);margin-top:8px;">※ DM은 슬랙 봇 설정이 끝난 뒤부터 발송됩니다. 실패하면 회원별 사유가 표시됩니다.</p>
@@ -2025,17 +2031,17 @@ function openMemberBookingModal(memberId){
     `📨 ${esc(m.name)}님에게 DM`,'primary');
   const prev=document.getElementById('bkPrev');
   const sumBox=document.getElementById('bkCostSum');
-  const refresh=()=>{
-    collectBookingInputs();
+  const paint=()=>{
     if(prev) prev.textContent=buildMemberBookingMessage(m);
     if(sumBox){
       const total=mates.reduce((s,x)=>s+movieCostOf(x.id),0);
       sumBox.textContent=total?`영화비 합계 ${fmt(total)}원`:'';
     }
   };
+  const refresh=()=>{ collectBookingInputs(); paint(); };
   document.querySelectorAll('#modalBox input[data-bk], #modalBox input[data-seat], #modalBox input[data-cost]')
     .forEach(el=>{ el.oninput=refresh; });
-  refresh();
+  paint(); // 열기만 했을 때는 값을 건드리지 않는다
   const saveBtn=document.getElementById('bkSaveOnly');
   if(saveBtn) saveBtn.onclick=async()=>{
     collectBookingInputs();
@@ -2185,6 +2191,16 @@ function slotMemberIds(movieId, movieTime){
 }
 function findMovieCost(movieId, movieTime){
   return (cur.finance.movieCosts||[]).find(c=>c.movieId===movieId&&(c.movieTime||'')===(movieTime||''));
+}
+/* 안내 모달 입력칸에 채울 값 — "실제로 적어둔 금액"만 돌려준다.
+   나중에 같은 상영에 추가 예매한 회원은 적어둔 값이 없으므로 빈칸으로 남고,
+   균등으로 입력해 둔 슬롯도 모달에서 건드리지 않도록 빈칸으로 둔다. */
+function recordedCostOf(memberId){
+  const r=(cur.records||{})[memberId];
+  if(!r||!r.attending||!r.movieId) return 0;
+  const c=findMovieCost(r.movieId, r.movieTime);
+  if(!c||!isPerMember(c)) return 0;
+  return Number(c.perMember[memberId])||0;
 }
 // 회원 한 명이 부담하는 영화비 — 안내 DM과 정산이 같은 값을 쓰도록 한 곳에 둔다
 function movieCostOf(memberId){
