@@ -719,7 +719,14 @@ function updateAuthArea(){
       <span class="auth-badge ${admin?'admin':'guest'}" style="cursor:pointer;" onclick="showMemberSelect()" title="이름 변경">${admin?'🔑 관리자':'👤 '+esc(currentUser.displayName)}</span>
       ${admin?`<button class="btn sm ghost" onclick="openNotifPanel()" title="회원 응답 알림" style="position:relative;font-size:13px;padding:4px 8px;">🔔<span id="notifBadge" style="display:none;position:absolute;top:-5px;right:-5px;background:var(--burgundy);color:#fff;font-size:9.5px;font-weight:700;min-width:15px;height:15px;line-height:15px;text-align:center;border-radius:8px;padding:0 3px;"></span></button>`:''}
       <button class="btn sm ghost" onclick="authSignOut()" style="font-size:11px;padding:4px 9px;">로그아웃</button>`;
-    if(admin){ watchNotifications(); updateNotifBadge(); }
+    if(admin){
+      watchNotifications(); updateNotifBadge();
+      // 예약 실행이 멈춰 있어도 밀린 알림이 나가도록 한 번 훑는다
+      if(!window.__sweptOnce){
+        window.__sweptOnce=true;
+        proxyFetch('notify-sweep-run',{}).catch(()=>{});
+      }
+    }
   } else {
     area.innerHTML = `<button class="btn sm" onclick="showMemberSelect()" style="font-size:12px;padding:5px 11px;">👤 내 이름 선택</button>`;
   }
