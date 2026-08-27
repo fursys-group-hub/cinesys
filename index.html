@@ -2520,9 +2520,12 @@ function renderPartyExpense(){
       <td><button class="btn xs ghost" data-act="upload-receipt" data-member-id="${m.id}" style="padding:4px 8px;">📸 ${recCount}건</button></td>
       <td>${isT
         ? '<span class="pill self">총무 (면제)</span>'
-        : isAdmin()
-          ? `<span class="chip ${p.reimbursed?'on green':''}" data-act="pe-rb">${p.reimbursed?'정산 완료':'미정산'}</span>`
-          : `<span class="pill ${p.reimbursed?'green':''}" style="opacity:.85">${p.reimbursed?'정산 완료':'미정산'}</span>`}</td>
+        : `<div style="display:flex;flex-direction:column;gap:3px;align-items:flex-start;">
+             ${isAdmin()
+               ? `<span class="chip ${p.reimbursed?'on green':''}" data-act="pe-rb">${p.reimbursed?'정산 완료':'미정산'}</span>`
+               : `<span class="pill ${p.reimbursed?'green':''}" style="opacity:.85">${p.reimbursed?'정산 완료':'미정산'}</span>`}
+             ${noticeStatusHtml(p)}
+           </div>`}</td>
     </tr>`;
   });
   h += '</tbody>'; t.innerHTML = h;
@@ -2543,7 +2546,16 @@ function renderPartyExpense(){
     }
     const mm = tr.querySelector('[data-act=manage-members]'); if(mm) mm.onclick = ()=>openManagedMembersModal(id);
     if(isAdmin()){
-      const rb = tr.querySelector('[data-act=pe-rb]'); if(rb) rb.onclick = ()=>{partyExp(id).reimbursed=!partyExp(id).reimbursed;saveMonth();renderPartyExpense();};
+      const rb = tr.querySelector('[data-act=pe-rb]');
+      if(rb) rb.onclick = async ()=>{
+        const p = partyExp(id);
+        p.reimbursed = !p.reimbursed;
+        if(!p.reimbursed) delete p.noticeSentAt; // 미정산으로 되돌리면 안내 표시도 지운다
+        await saveMonth();
+        renderPartyExpense();
+        // 정산 완료로 바꾼 순간에만 안내를 물어본다
+        if(p.reimbursed) openReimburseNoticeModal(id);
+      };
     }
   });
   const partyPpl = partyAttendees();
@@ -2861,6 +2873,59 @@ function renderReceipts(){
       };
     });
   }
+}
+
+/* ── 정산 완료 안내 (총무 → 회원 슬랙 DM) ── */
+function buildSettlementMessage(memberId){
+  const m=members.find(x=>x.id===memberId); if(!m) return '';
+  const d=settlementData(); if(!d) return '';
+  const row=d.rows.find(r=>r.id===memberId);
+  const p=partyExp(memberId);
+  const spent=Number(p.amount)||0;
+  const dep=row?row.dep:spent;
+  const names=(p.managedMemberIds&&p.managedMemberIds.length>1)
+    ? p.managedMemberIds.map(id=>(members.find(x=>x.id===id)||{}).name).filter(Boolean)
+    : [];
+  const L=[];
+  L.push(`💰 [씨네시스] ${labelOf(curId)} 정산 완료`);
+  L.push('');
+  L.push(`${m.name}님, 간식·뒷풀이비 정산이 완료되었습니다.`);
+  L.push('');
+  if(spent>0) L.push(`사용 금액: ${fmt(spent)}원`);
+  L.push(`입금액: ${fmt(dep)}원`);
+  if(names.length) L.push(`포함 인원: ${names.join(', ')}`);
+  if(spent>dep) L.push(`\n지원금 한도에 맞춰 조정된 금액입니다.`);
+  return L.join('\n');
+}
+
+async function openReimburseNoticeModal(memberId){
+  if(!isAdmin()){ toast('권한이 없습니다'); return; }
+  const m=members.find(x=>x.id===memberId); if(!m) return;
+  const email=(m.email||'').trim();
+  const msg=buildSettlementMessage(memberId);
+  openModal(`💰 ${esc(m.name)}님 정산 완료 안내`,
+    `<p style="font-size:12.5px;color:var(--ink2);line-height:1.7;margin-bottom:12px;">
+       정산 완료로 표시했습니다. 아래 내용을 <b>슬랙 DM</b>으로 알려드릴까요?</p>
+     ${email
+       ? `<p style="font-size:11.5px;color:var(--ink3);margin:-6px 0 12px;">받는 사람: ${esc(email)}</p>`
+       : `<p style="font-size:11.5px;color:var(--burgundy);margin:-6px 0 12px;">⚠ 이메일이 등록되지 않아 DM을 보낼 수 없습니다.</p>`}
+     <pre style="white-space:pre-wrap;font-family:inherit;font-size:12.5px;line-height:1.65;background:var(--paper2);border:1px solid var(--line);border-radius:4px;padding:10px 12px;margin:0;">${esc(msg)}</pre>
+     <p style="font-size:11.5px;color:var(--ink3);margin-top:8px;">보내지 않아도 정산 완료 표시는 유지됩니다.</p>`,
+    async()=>{
+      if(!email){ toast('이메일이 없어 보낼 수 없습니다'); return; }
+      try{
+        const r=await slackDM([{email, name:m.name, text:msg}]);
+        const ok=(r.results||[]).some(x=>x.ok);
+        if(ok){
+          partyExp(memberId).noticeSentAt=Date.now();
+          await saveMonth(); renderFinance();
+          toast(`${m.name}님에게 정산 완료 안내를 보냈습니다 ✓`);
+        }else{
+          const err=(r.results||[])[0];
+          toast(`전송 실패 — ${err&&err.error?err.error:'사유를 알 수 없습니다'}`);
+        }
+      }catch(e){ toast(`전송 실패 — ${e.message}`); }
+    },'📨 DM 보내기','primary');
 }
 
 /* ── 영수증 사진 정리 ──
