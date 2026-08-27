@@ -2465,7 +2465,20 @@ function renderMovieCosts(){
 function renderPartyExpense(){
   const t = document.getElementById('partyExpenseTbl');
   const totalBox = document.getElementById('partyTotalBox');
-  const party = attendees().slice().sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  const all = attendees().slice().sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+
+  /* 담당 인원으로 지정된 회원은 결제자 한 줄에 합쳐지므로 자기 줄을 없앤다.
+     단, 본인도 누군가를 담당하고 있으면(결제자) 줄을 남긴다. */
+  const pexp = cur.finance.partyExpenses||{};
+  const isPayer = id => ((pexp[id]||{}).managedMemberIds||[]).length > 1;
+  const coveredBy = {};
+  Object.entries(pexp).forEach(([payerId, p])=>{
+    if(!p || !p.managedMemberIds || p.managedMemberIds.length<2) return;
+    p.managedMemberIds.forEach(mid=>{
+      if(mid!==payerId && !isPayer(mid) && !coveredBy[mid]) coveredBy[mid]=payerId;
+    });
+  });
+  const party = all.filter(m=>!coveredBy[m.id]);
   if(!party.length){
     t.innerHTML = '<tbody><tr><td><div class="empty">참석자가 없습니다.</div></td></tr></tbody>';
     totalBox.innerHTML = '';
@@ -2482,8 +2495,13 @@ function renderPartyExpense(){
     const managed = p.managedMemberIds||[m.id];
     const mLabel = managed.length > 1 ? `${managed.length}명` : '본인';
     const manageBtn = canEdit(m.id) ? `<button class="btn xs ghost" data-act="manage-members" style="margin-left:6px;font-size:10px;padding:2px 6px;">${mLabel}</button>` : '';
+    // 합쳐진 회원 이름을 밑에 적어 누가 포함됐는지 보이게 한다
+    const others = managed.filter(id=>id!==m.id).map(id=>(members.find(x=>x.id===id)||{}).name).filter(Boolean);
+    const groupNote = others.length
+      ? `<div style="font-size:10.5px;color:var(--ink3);margin-top:2px;line-height:1.4;">+ ${others.map(esc).join(', ')}</div>`
+      : '';
     h += `<tr data-id="${m.id}">
-      <td class="name">${esc(m.name)}${manageBtn}</td>
+      <td class="name">${esc(m.name)}${manageBtn}${groupNote}</td>
       <td><input type="text" data-act="pe-item" value="${esc(p.item||'')}" style="width:100%;max-width:150px"${canEdit(m.id)?'':' disabled'}></td>
       <td><input type="text" inputmode="numeric" class="num" data-act="pe-amt" value="${p.amount?Number(p.amount).toLocaleString('ko-KR'):''}" oninput="fmtNumInput(this)"${canEdit(m.id)?'':' disabled'}></td>
       <td><button class="btn xs ghost" data-act="upload-receipt" data-member-id="${m.id}" style="padding:4px 8px;">📸 ${recCount}건</button></td>
@@ -2843,11 +2861,16 @@ function settlementData(){
 
   const partyExpenses = cur.finance?.partyExpenses || {};
 
+  /* 담당 인원으로 지정되면 결제자 한 줄로 합친다.
+     금액 입력 여부와 무관하게 합쳐야 간식/뒷풀이 입력 표와 어긋나지 않는다.
+     본인도 결제자면 합치지 않는다. */
+  const isPayerRow = id => ((partyExpenses[id]||{}).managedMemberIds||[]).length > 1;
   const coveredByPayer = {};
   Object.entries(partyExpenses).forEach(([payerId, pe]) => {
-    if((pe.amount||0) > 0 && pe.managedMemberIds) {
-      pe.managedMemberIds.forEach(mid => { if(mid !== payerId) coveredByPayer[mid] = payerId; });
-    }
+    if(!pe || !pe.managedMemberIds || pe.managedMemberIds.length < 2) return;
+    pe.managedMemberIds.forEach(mid => {
+      if(mid !== payerId && !isPayerRow(mid) && !coveredByPayer[mid]) coveredByPayer[mid] = payerId;
+    });
   });
 
   const rows = [];
@@ -2860,7 +2883,9 @@ function settlementData(){
     let groupCount = 1;
     let managedNames = [];
 
-    if(snack > 0){
+    // 담당 인원이 지정돼 있으면 금액 입력 전에도 합산한다.
+    // (금액 기준으로 하면 합쳐진 회원의 영화비가 어느 줄에도 안 잡힌다)
+    if(isPayerRow(m.id)){
       const managed = partyExpenses[m.id]?.managedMemberIds || [m.id];
       groupCount = managed.length;
       managedNames = managed.map(id => members.find(x=>x.id===id)?.name).filter(Boolean);
