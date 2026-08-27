@@ -571,8 +571,9 @@
     <div class="panel">
       <h2><span class="ic">🍻</span> 간식 / 뒷풀이비</h2>
       <div class="desc">참석자 전원이 표시됩니다. 각자 쓴 금액을 입력하고 정산 여부를 체크하세요.</div>
-      <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
         <button class="btn sm primary" id="uploadReceiptBtn">📸 영수증 업로드</button>
+        <button class="btn sm ghost admin-only" id="cleanupReceiptsBtn" title="정산이 끝난 달의 영수증 사진을 지워 저장 공간을 확보합니다">🧹 사진 정리</button>
       </div>
       <div id="receiptsContainer"></div>
       <div class="scroll">
@@ -2279,6 +2280,8 @@ function renderFinance(){
   setTimeout(()=>{
     const uploadBtn = document.getElementById('uploadReceiptBtn');
     if(uploadBtn && currentUser) uploadBtn.onclick = ()=>uploadReceiptForMember(currentUser.memberId);
+    const cleanBtn = document.getElementById('cleanupReceiptsBtn');
+    if(cleanBtn) cleanBtn.onclick = openReceiptCleanupModal;
   }, 50);
 }
 
@@ -2826,7 +2829,8 @@ function renderReceipts(){
   if(!unsettled.length){cont.innerHTML='';return;}
   let h=`<div style="margin-bottom:14px;padding:12px;background:var(--bg1);border-radius:6px;">
     <div style="font-size:12px;font-weight:600;color:var(--ink2);margin-bottom:10px;">📸 업로드된 영수증 (${unsettled.length}건)</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;">`;
+    <div style="font-size:11px;color:var(--ink3);margin-bottom:8px;">사진을 누르면 크게 볼 수 있습니다.</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;">`;
   unsettled.forEach(r=>{
     h+=`<div style="position:relative;border-radius:6px;overflow:hidden;background:var(--bg2);aspect-ratio:1;">
       <img src="${r.image}" style="width:100%;height:100%;object-fit:cover;">
@@ -2834,12 +2838,19 @@ function renderReceipts(){
         <div><strong>${r.memberName}</strong></div>
         <div>${fmt(r.amount)}원<br>${r.type==='snack'?'간식':r.type==='afterparty'?'뒷풀이':'기타'}</div>
       </div>
-      <div style="position:absolute;top:0;right:0;left:0;bottom:0;" data-id="${r.id}" onmouseover="this.parentElement.querySelector('.receipt-hover').style.opacity='1'" onmouseout="this.parentElement.querySelector('.receipt-hover').style.opacity='0'"></div>
+      <div class="zoomable" style="position:absolute;top:0;right:0;left:0;bottom:0;" data-zoom-id="${r.id}" data-id="${r.id}" onmouseover="this.parentElement.querySelector('.receipt-hover').style.opacity='1'" onmouseout="this.parentElement.querySelector('.receipt-hover').style.opacity='0'"></div>
       ${isAdmin()?`<button class="btn xs ghost" style="position:absolute;bottom:2px;right:2px;padding:3px 6px;font-size:10px;" data-act="settle-receipt" data-id="${r.id}">✓</button>`:''}
     </div>`;
   });
   h+=`</div></div>`;
   cont.innerHTML=h;
+  // 사진을 눌러 크게 보기
+  cont.querySelectorAll('[data-zoom-id]').forEach(el=>{
+    el.onclick=()=>{
+      const r=(cur.finance.receipts||[]).find(x=>x.id===el.dataset.zoomId);
+      if(r&&r.image) openImageViewer(r.image, `${esc(r.memberName||'')} · ${fmt(r.amount)}원`);
+    };
+  });
   if(isAdmin()){
     cont.querySelectorAll('[data-act="settle-receipt"]').forEach(btn=>{
       btn.onclick=()=>{
@@ -2850,6 +2861,73 @@ function renderReceipts(){
       };
     });
   }
+}
+
+/* ── 영수증 사진 정리 ──
+   영수증 사진이 월 데이터 안에 통째로 저장되는 구조라 달마다 용량이 커진다.
+   Firebase 한 값의 상한이 10MB이므로, 정산이 끝난 달은 사진만 지워
+   금액·분류·설명은 남긴다. */
+function monthImageStats(mo){
+  let count=0, bytes=0;
+  const scan=r=>{ if(r&&r.image){ count++; bytes+=r.image.length; } };
+  (mo.finance?.receipts||[]).forEach(scan);
+  Object.values(mo.finance?.memberReceipts||{}).forEach(arr=>(arr||[]).forEach(scan));
+  return {count, bytes};
+}
+function stripMonthImages(mo){
+  let removed=0;
+  const strip=r=>{ if(r&&r.image){ delete r.image; r.imagePurged=true; removed++; } };
+  (mo.finance?.receipts||[]).forEach(strip);
+  Object.values(mo.finance?.memberReceipts||{}).forEach(arr=>(arr||[]).forEach(strip));
+  return removed;
+}
+const kb = b => `${Math.round(b/1024).toLocaleString('ko-KR')} KB`;
+
+async function openReceiptCleanupModal(){
+  if(!isAdmin()){ toast('권한이 없습니다'); return; }
+  // 캐시에 없는 달도 불러온다
+  for(const id of monthIndex){ if(!monthCache[id]){ const mo=await sGet(mKey(id),null); if(mo) monthCache[id]=mo; } }
+
+  const rows=monthIndex.slice().sort().map(id=>{
+    const mo=monthCache[id]; if(!mo) return null;
+    const st=monthImageStats(mo);
+    return {id, ...st, isCur:id===curId};
+  }).filter(Boolean).filter(r=>r.count>0);
+
+  if(!rows.length){
+    openModal('🧹 영수증 사진 정리','<div class="empty">지울 영수증 사진이 없습니다.</div>',()=>{},'확인');
+    return;
+  }
+  const total=rows.reduce((s,r)=>s+r.bytes,0);
+  const list=rows.map(r=>`
+    <label style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--line);cursor:pointer;">
+      <input type="checkbox" class="cleanup-cb" value="${r.id}" ${r.isCur?'':'checked'} style="width:15px;height:15px;accent-color:var(--sepia);cursor:pointer;">
+      <span style="flex:1;font-size:13.5px;">${labelOf(r.id)}${r.isCur?' <span class="pill self xs">이번 달</span>':''}</span>
+      <span style="font-size:12px;color:var(--ink3);font-variant-numeric:tabular-nums;">사진 ${r.count}장 · ${kb(r.bytes)}</span>
+    </label>`).join('');
+
+  openModal('🧹 영수증 사진 정리',
+    `<p style="font-size:13px;color:var(--ink2);line-height:1.7;margin-bottom:12px;">
+       선택한 달의 <b>영수증 사진만</b> 지웁니다. 금액·분류·설명·정산 기록은 그대로 남습니다.<br>
+       <span style="color:var(--burgundy);font-size:12px;">지운 사진은 되돌릴 수 없습니다.</span>
+     </p>
+     <div style="max-height:280px;overflow-y:auto;">${list}</div>
+     <p style="font-size:12px;color:var(--ink3);margin-top:10px;">전체 사진 용량 ${kb(total)} · 이번 달은 기본 제외됩니다.</p>`,
+    async()=>{
+      const ids=[...document.querySelectorAll('.cleanup-cb:checked')].map(cb=>cb.value);
+      if(!ids.length){ toast('정리할 달을 선택해주세요'); return false; }
+      let removed=0, saved=0, failed=[];
+      for(const id of ids){
+        const mo=monthCache[id]; if(!mo) continue;
+        const before=monthImageStats(mo).bytes;
+        const n=stripMonthImages(mo);
+        const ok=await sSet(mKey(id), mo);
+        if(ok){ removed+=n; saved+=before; } else failed.push(labelOf(id));
+      }
+      renderFinance();
+      if(failed.length) toast(`일부 실패 — ${failed.join(', ')}`);
+      else toast(`사진 ${removed}장을 정리했습니다 (${kb(saved)} 확보) ✓`);
+    },'선택한 달 정리','danger');
 }
 
 /* 정산 행 + 목표액 계산 (렌더와 자동배분이 공유) */
