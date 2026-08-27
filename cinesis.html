@@ -2569,8 +2569,20 @@ function syncPartyExpFromReceipts(memberId){
   if(descs.length) p.item=descs.join(', ');
 }
 
+/* 영수증 파일명에 쓸 이름 — 담당 인원이 지정돼 있으면 모두 붙인다.
+   결제자를 앞에 두고 나머지를 잇는다. 예: 최세령+강지은+김수진+이성근 */
+function receiptNameChain(memberId){
+  const p=(cur.finance&&cur.finance.partyExpenses||{})[memberId]||{};
+  const ids=(p.managedMemberIds&&p.managedMemberIds.length)?p.managedMemberIds:[memberId];
+  const ordered=[memberId, ...ids.filter(id=>id!==memberId)];
+  const names=ordered.map(id=>(members.find(x=>x.id===id)||{}).name).filter(Boolean);
+  // 파일명에 쓸 수 없는 문자만 걸러낸다
+  return (names.length?names:['영수증']).join('+').replace(/[\\/:*?"<>|]/g,'');
+}
+
 function viewReceiptsForMember(memberId){
   const m=members.find(x=>x.id===memberId); if(!m) return;
+  const nameChain=receiptNameChain(memberId);
   // 신형(memberReceipts) + 구형(receipts) 합산 — 구형은 읽기 전용으로 표시
   const newRecs=(cur.finance?.memberReceipts||{})[memberId]||[];
   const oldRecs=(cur.finance?.receipts||[]).filter(r=>r.memberId===memberId).map(r=>({...r,_legacy:true}));
@@ -2586,7 +2598,7 @@ function viewReceiptsForMember(memberId){
       const date=r.uploadedAt?new Date(r.uploadedAt).toLocaleDateString('ko-KR'):'';
       const typeLabel=r.type==='afterparty'?'뒷풀이비':r.type==='snack'?'간식':'기타';
       const dlBtn=r.image
-        ?`<a href="${r.image}" download="${r.amount}-${esc(m.name)}.jpg" style="display:inline-flex;align-items:center;gap:4px;background:var(--sepia);color:#fff;padding:4px 10px;border-radius:3px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;">⬇ 다운로드</a>`
+        ?`<a href="${r.image}" download="${r.amount}-${esc(nameChain)}.jpg" style="display:inline-flex;align-items:center;gap:4px;background:var(--sepia);color:#fff;padding:4px 10px;border-radius:3px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;">⬇ 다운로드</a>`
         :'';
       const editBtn=(canDelete && !r._legacy)
         ?`<button class="btn xs ghost edit-receipt-btn" data-rid="${r.id}" style="padding:3px 8px;font-size:11px;">✏️ 수정</button>`
