@@ -271,6 +271,16 @@
   .modal-bg{position:fixed;inset:0;background:rgba(44,44,44,.55);backdrop-filter:blur(2px);z-index:50;display:none;align-items:center;justify-content:center;padding:18px;overflow-y:auto;}
   .modal-bg.show{display:flex;}
   .modal{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:28px;width:100%;max-width:520px;box-shadow:var(--shadow-lg);animation:pop .25s ease;max-height:90vh;overflow-y:auto;}
+  .modal.wide{max-width:880px;}
+  /* 영수증 전체화면 보기 — 금액 숫자를 확인하려면 크게 봐야 한다 */
+  .img-viewer{position:fixed;inset:0;z-index:200;background:rgba(24,21,18,.95);display:flex;flex-direction:column;gap:10px;padding:12px;}
+  .img-viewer .iv-bar{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;color:#efe9df;font-size:13px;}
+  .img-viewer .iv-wrap{flex:1;min-height:0;overflow:auto;display:flex;align-items:center;justify-content:center;}
+  .img-viewer img{max-width:100%;max-height:100%;object-fit:contain;cursor:zoom-in;}
+  .img-viewer.zoomed img{max-width:none;max-height:none;width:auto;cursor:zoom-out;}
+  .img-viewer button{background:transparent;border:1px solid #6b625a;color:#efe9df;border-radius:3px;padding:4px 10px;font-size:12px;font-family:inherit;cursor:pointer;}
+  .img-viewer button:hover{border-color:#efe9df;}
+  .zoomable{cursor:zoom-in;}
   @keyframes pop{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
   .modal h3{font-family:'Noto Serif KR',serif;font-weight:700;font-size:20px;margin-bottom:18px;color:var(--ink);}
   .modal .field{margin-bottom:14px;}
@@ -2616,7 +2626,8 @@ function viewReceiptsForMember(memberId){
             ${delBtn}
           </div>
         </div>
-        ${r.image?`<img src="${r.image}" style="width:100%;display:block;max-height:380px;object-fit:contain;background:var(--cream);">`:'<div style="padding:20px;text-align:center;color:var(--ink3);font-size:12px">이미지 없음</div>'}
+        ${r.image?`<img class="zoomable" data-zoom="${r.image}" data-cap="${esc(typeLabel)} · ${fmt(r.amount)}원" src="${r.image}" style="width:100%;display:block;max-height:74vh;object-fit:contain;background:var(--cream);">
+          <div style="padding:5px 14px 7px;font-size:11px;color:var(--ink3);text-align:center;background:var(--paper2);">이미지를 누르면 크게 볼 수 있습니다</div>`:'<div style="padding:20px;text-align:center;color:var(--ink3);font-size:12px">이미지 없음</div>'}
       </div>`;
     }).join('');
   } else {
@@ -2624,13 +2635,19 @@ function viewReceiptsForMember(memberId){
   }
 
   const uploadRow=canUpload?`<div style="margin-top:4px;padding-top:14px;border-top:1px solid var(--line)"><button class="btn sm primary" id="addReceiptInViewBtn">+ 영수증 추가</button></div>`:'';
-  document.getElementById('modalBox').innerHTML=`
+  const box=document.getElementById('modalBox');
+  box.className='modal wide'; // 영수증은 넓게 봐야 금액이 읽힌다
+  box.innerHTML=`
     <h3>${esc(m.name)}님 영수증 (${receipts.length}건)</h3>
-    <div style="max-height:55vh;overflow-y:auto;padding-right:2px;">${imgHtml}</div>
+    <div style="max-height:76vh;overflow-y:auto;padding-right:2px;">${imgHtml}</div>
     ${uploadRow}
     <div class="actions"><button class="btn ghost" id="mCancel">닫기</button></div>`;
   document.getElementById('modalBg').classList.add('show');
   document.getElementById('mCancel').onclick=closeModal;
+  // 이미지 클릭 → 전체화면 확대
+  box.querySelectorAll('img[data-zoom]').forEach(img=>{
+    img.onclick=()=>openImageViewer(img.dataset.zoom, img.dataset.cap||'');
+  });
   if(canUpload){
     document.getElementById('addReceiptInViewBtn')?.addEventListener('click',()=>{closeModal();uploadReceiptForMember(memberId);});
   }
@@ -2655,7 +2672,8 @@ function viewReceiptsForMember(memberId){
                <label>이미지 교체 (선택)</label>
                <input id="editRfile" type="file" accept="image/*" style="width:100%;" onchange="(f=>{if(!f)return;const fr=new FileReader();fr.onload=e=>{const p=document.getElementById('editRpreview');const i=document.getElementById('editRpreviewImg');if(p&&i){i.src=e.target.result;p.style.display='block';}};fr.readAsDataURL(f);})(this.files[0])">
                <div id="editRpreview" style="margin-top:8px;display:${r.image?'block':'none'};">
-                 <img id="editRpreviewImg" src="${r.image||''}" style="max-width:100%;max-height:160px;object-fit:contain;border:1px solid var(--line2);border-radius:3px;display:block;">
+                 <img id="editRpreviewImg" class="zoomable" onclick="if(this.src)openImageViewer(this.src,'영수증 미리보기')" src="${r.image||''}" style="max-width:100%;max-height:46vh;object-fit:contain;border:1px solid var(--line2);border-radius:3px;display:block;">
+                 <div style="font-size:10.5px;color:var(--ink3);margin-top:3px;">이미지를 누르면 크게 볼 수 있습니다</div>
                </div>
              </div>
            </div>`,
@@ -2766,7 +2784,7 @@ function uploadReceiptModal(){
   const body=`<div style="display:flex;flex-direction:column;gap:14px;">
     <div class="field"><label>영수증 이미지</label>
       <input id="receiptFile" type="file" accept="image/*" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:3px;">
-      <div id="receiptPreview" style="margin-top:8px;max-height:150px;border-radius:3px;overflow:hidden;"></div>
+      <div id="receiptPreview" style="margin-top:8px;border-radius:3px;overflow:hidden;"></div>
     </div>
     <div class="grid2">
       <div class="field"><label>금액</label><input id="receiptAmount" type="text" inputmode="numeric" oninput="fmtNumInput(this)" style="width:100%;"></div>
@@ -2792,7 +2810,10 @@ function uploadReceiptModal(){
     reader.onload=(event)=>{
       fileData=event.target.result;
       const preview=document.getElementById('receiptPreview');
-      preview.innerHTML=`<img src="${fileData}" style="width:100%;height:auto;object-fit:cover;border-radius:3px;">`;
+      // 잘리지 않게 contain으로, 금액을 확인할 수 있게 크게 보여준다
+      preview.innerHTML=`<img class="zoomable" src="${fileData}" style="width:100%;max-height:46vh;object-fit:contain;border-radius:3px;display:block;background:var(--cream);">
+        <div style="font-size:10.5px;color:var(--ink3);margin-top:3px;">이미지를 누르면 크게 볼 수 있습니다</div>`;
+      preview.querySelector('img').onclick=()=>openImageViewer(fileData,'영수증 미리보기');
     };
     reader.readAsDataURL(file);
   };
@@ -3675,8 +3696,36 @@ function delMonth(){
 
 /* ============== Modal / Toast / util ============== */
 let modalConfirm=null;
-function openModal(title,bodyHtml,onConfirm,okText='확인',okClass='primary'){
+/* 영수증 전체화면 보기 — 클릭하면 원본 크기로 확대된다 */
+function openImageViewer(src, caption){
+  const old=document.getElementById('imgViewer'); if(old) old.remove();
+  const v=document.createElement('div');
+  v.id='imgViewer'; v.className='img-viewer';
+  v.innerHTML=`
+    <div class="iv-bar">
+      <span>${esc(caption||'')}</span>
+      <button data-act="iv-zoom">🔍 원본 크기</button>
+      <button data-act="iv-close">✕ 닫기</button>
+    </div>
+    <div class="iv-wrap"><img src="${src}" alt="영수증"></div>`;
+  document.body.appendChild(v);
+  const zoomBtn=v.querySelector('[data-act=iv-zoom]');
+  const toggle=()=>{
+    v.classList.toggle('zoomed');
+    zoomBtn.textContent=v.classList.contains('zoomed')?'🔍 화면 맞춤':'🔍 원본 크기';
+  };
+  const close=()=>{ v.remove(); document.removeEventListener('keydown',onKey); };
+  function onKey(e){ if(e.key==='Escape') close(); }
+  v.querySelector('img').onclick=toggle;
+  zoomBtn.onclick=toggle;
+  v.querySelector('[data-act=iv-close]').onclick=close;
+  v.onclick=e=>{ if(e.target===v||e.target.classList.contains('iv-wrap')) close(); };
+  document.addEventListener('keydown',onKey);
+}
+
+function openModal(title,bodyHtml,onConfirm,okText='확인',okClass='primary',boxClass=''){
   modalConfirm=onConfirm;
+  document.getElementById('modalBox').className='modal'+(boxClass?' '+boxClass:'');
   document.getElementById('modalBox').innerHTML=`<h3>${title}</h3>${bodyHtml}
     <div class="actions"><button class="btn ghost" id="mCancel">취소</button>
     <button class="btn ${okClass}" id="mOk">${okText}</button></div>`;
