@@ -16,6 +16,7 @@ const TMDB = 'https://api.themoviedb.org/3';
 const KOBIS = 'https://www.kobis.or.kr/kobisopenapi/webservice/rest';
 const MAX_WEEKS = 14;      // 개봉 후 몇 주까지 주간 순위를 뒤져볼지
 const MAX_WEEK_FETCH = 20; // 한 번에 받아올 주간 순위표 수 (실행 시간 상한)
+const DAILY_LOOKBACK = 5;  // 최근 며칠의 일별 순위표를 볼지 (개봉 직후 대응)
 const FINAL_AFTER_DAYS = 150; // 이 기간이 지나고 관객수가 있으면 확정된 값으로 보고 조회 생략
 const MAX_ITEMS = 60;
 
@@ -174,10 +175,11 @@ async function audienceByCode(key, items) {
     if (days > FINAL_AFTER_DAYS && Number(it.audienceCount) > 0) return;
 
     const weeks = [];
-    for (let w = 1; w <= MAX_WEEKS; w++) {
+    // w=0은 개봉이 포함된 주. 이걸 빼면 개봉 첫 주 기록을 통째로 놓친다.
+    for (let w = 0; w <= MAX_WEEKS; w++) {
       const d = new Date(openDate);
       d.setDate(d.getDate() + w * 7);
-      if (d > today) break;
+      if (mondayOf(d) > today) break;
       weeks.push(ymd(mondayOf(d)));   // 같은 주는 같은 순위표
     }
     if (!weeks.length) return;
@@ -189,7 +191,35 @@ async function audienceByCode(key, items) {
   const found = new Map();
   if (!need.length) return found;
 
-  const targets = [...weekSet].sort().reverse().slice(0, MAX_WEEK_FETCH);
+  /* 1) 일별 박스오피스 — 개봉 직후에는 주간 순위표가 아직 나오지 않는다.
+        하루치 순위표가 모든 영화를 담으므로 요청 수는 편수와 무관하다. */
+  const dayKeys = [];
+  for (let i = 1; i <= DAILY_LOOKBACK; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    dayKeys.push(ymd(d));
+  }
+  const daily = new Map();
+  await Promise.all(dayKeys.map(async dt => {
+    const data = await getJson(`${KOBIS}/boxoffice/searchDailyBoxOfficeList.json?key=${key}&targetDt=${dt}&itemPerPage=50`)
+      .catch(() => null);
+    daily.set(dt, (data && data.boxOfficeResult && data.boxOfficeResult.dailyBoxOfficeList) || []);
+  }));
+  const recentFirst = [...dayKeys].sort().reverse();
+  need.forEach(({ id, movieCd }) => {
+    for (const dt of recentFirst) {          // 가장 최근 날짜의 누적값이 가장 정확하다
+      const hit = (daily.get(dt) || []).find(m => m.movieCd === movieCd);
+      if (hit && hit.audiAcc != null) { found.set(id, Number(hit.audiAcc)); return; }
+    }
+  });
+
+  // 2) 일별에 없는 영화(상영이 끝난 옛 영화)는 주간 순위표에서 찾는다
+  const remaining = need.filter(n => !found.has(n.id));
+  if (!remaining.length) return found;
+  const neededWeeks = new Set();
+  remaining.forEach(n => n.weeks.forEach(w => neededWeeks.add(w)));
+
+  const targets = [...neededWeeks].sort().reverse().slice(0, MAX_WEEK_FETCH);
   const lists = new Map();
   await Promise.all(targets.map(async dt => {
     const data = await getJson(`${KOBIS}/boxoffice/searchWeeklyBoxOfficeList.json?key=${key}&targetDt=${dt}&itemPerPage=50`)
@@ -197,7 +227,7 @@ async function audienceByCode(key, items) {
     lists.set(dt, (data && data.boxOfficeResult && data.boxOfficeResult.weeklyBoxOfficeList) || []);
   }));
 
-  need.forEach(({ id, movieCd, weeks }) => {
+  remaining.forEach(({ id, movieCd, weeks }) => {
     for (const w of weeks) {                 // 순위에 남아 있던 가장 최근 주차
       const list = lists.get(w);
       if (!list) continue;
