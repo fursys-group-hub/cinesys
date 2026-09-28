@@ -1244,6 +1244,7 @@ async function init(){
   slackWebhook = await sGet(KEY_SLACK, '') || '';
   curId = monthIndex[0];
   cur = monthCache[curId];
+  baselineMonth = cur ? JSON.stringify(cur) : null; // 저장 병합의 기준점
   buildMonthSelect();
   renderAll();
   refreshLibraryLiveData();
@@ -1275,13 +1276,79 @@ async function loadMonth(id){
     if(cur.records) Object.values(cur.records).forEach(r=>{if(r.movieTime===undefined) r.movieTime=null;});
     fixCombinedTimes(cur);
     monthCache[id]=cur;
+    // 저장할 때 "내가 바꾼 것"만 가려내기 위한 기준 사본
+    baselineMonth=JSON.stringify(cur);
     // 동일 슬롯 중복이 정리됐으면 Firebase에도 반영
-    if(cur.finance.movieCosts.length < prevCostLen) await sSet(mKey(id), cur);
+    if(cur.finance.movieCosts.length < prevCostLen) await saveMonth();
+  } else {
+    baselineMonth=null;
   }
   buildMonthSelect();
   renderAll();
 }
-async function saveMonth(){ if(cur){ monthCache[curId]=cur; return await sSet(mKey(curId), cur); } return false; }
+/* 한 달치 데이터는 한 덩어리 문자열로 저장된다.
+   여러 사람이 같은 시간에 저장하면, 먼저 화면을 열어둔 사람이 나중에 저장하면서
+   그 사이 다른 사람이 적은 내용을 통째로 덮어써 버린다 (2026-09-28 실제 발생).
+   그래서 화면을 열 때의 사본(baselineMonth)을 기억해 두고, 저장할 때
+   "내가 바꾼 항목"만 서버 최신본에 얹는다. */
+let baselineMonth = null;
+const cloneJson = o => JSON.parse(JSON.stringify(o));
+const safeParse = s => { try{ return JSON.parse(s); }catch(e){ return null; } };
+
+// 회원별로 나뉘어 여러 사람이 동시에 건드리는 항목들
+const PER_MEMBER_MAPS = [['records'], ['finance','partyExpenses'], ['finance','memberReceipts']];
+const getPath = (o,p) => p.reduce((a,k)=>(a&&a[k]!==undefined)?a[k]:undefined, o);
+function setPath(o,p,v){
+  let t=o;
+  for(let i=0;i<p.length-1;i++){ if(!t[p[i]]||typeof t[p[i]]!=='object') t[p[i]]={}; t=t[p[i]]; }
+  t[p[p.length-1]]=v;
+}
+function mergeMonth(server, local, base){
+  const out = cloneJson(local);             // 영화·정산 설정 등은 내 화면 기준
+  PER_MEMBER_MAPS.forEach(path=>{
+    const s = getPath(server,path) || {};
+    const l = getPath(local,path)  || {};
+    const b = (base ? getPath(base,path) : null) || {};
+    const merged = cloneJson(s);            // 서버 최신본에서 출발
+    // 내가 실제로 바꾼 회원만 내 값으로 덮어쓴다
+    new Set([...Object.keys(l), ...Object.keys(b)]).forEach(id=>{
+      const mine = JSON.stringify(l[id]);
+      if(mine === JSON.stringify(b[id])) return;   // 안 바꿨으면 서버 값을 지킨다
+      if(l[id]===undefined) delete merged[id]; else merged[id]=cloneJson(l[id]);
+    });
+    setPath(out, path, merged);
+  });
+  return out;
+}
+
+async function saveMonth(){
+  if(!cur) return false;
+  monthCache[curId]=cur;
+  const key=mKey(curId);
+  const base=baselineMonth?safeParse(baselineMonth):null;
+  try{
+    const res=await db.ref('cinesys/'+key).transaction(serverStr=>{
+      const server=serverStr?safeParse(serverStr):null;
+      if(!server) return JSON.stringify(cur);      // 서버에 아직 없으면 그대로
+      return JSON.stringify(mergeMonth(server, cur, base));
+    });
+    if(!res.committed){ toast('❌ 저장 실패 — 잠시 후 다시 시도해주세요'); return false; }
+    const merged=safeParse(res.snapshot.val());
+    if(merged){
+      // 다른 사람이 그 사이 적은 내용까지 반영된 결과를 화면에 되돌린다
+      Object.keys(cur).forEach(k=>{ if(!(k in merged)) delete cur[k]; });
+      Object.assign(cur, merged);
+      monthCache[curId]=cur;
+      memStore[key]=cur;
+    }
+    baselineMonth=JSON.stringify(cur);
+    return true;
+  }catch(e){
+    console.error('saveMonth 실패',e);
+    toast('❌ 저장 실패 — 네트워크를 확인하고 다시 시도해주세요');
+    return false;
+  }
+}
 async function saveMembers(){ await sSet(KEY_MEMBERS, members); }
 async function saveIndex(){ await sSet(KEY_INDEX, monthIndex); }
 
@@ -1372,6 +1439,7 @@ function deleteMonthById(id){
         curId=monthIndex[0];
         cur=await sGet(mKey(curId),null);
         if(cur){cur.finance=migrateFinance(cur.finance);}
+        baselineMonth = cur ? JSON.stringify(cur) : null;
       }
       buildMonthSelect();renderAll();
       toast(labelOf(id)+' 삭제됨');
@@ -3824,7 +3892,7 @@ function newMonth(){
       const obj={id,label:labelOf(id),movies:[],records:{},finance:{perPerson:30000,movieCosts:[],partyExpenses:{},excessPayments:{}},reviewers:{},confirmed:false,prevMonthExclusions:[],revealed:{}};
       monthIndex.unshift(id); monthIndex.sort().reverse();
       await saveIndex(); await sSet(mKey(id),obj);
-      curId=id; cur=obj; monthCache[id]=obj; buildMonthSelect(); renderAll();
+      curId=id; cur=obj; monthCache[id]=obj; baselineMonth=JSON.stringify(obj); buildMonthSelect(); renderAll();
       toast(labelOf(id)+' 생성됨');
     },'만들기','primary');
 }
