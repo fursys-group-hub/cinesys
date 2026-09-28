@@ -678,6 +678,14 @@ function isTreasurerOrChair(){
   const me = memberById(currentUser.memberId);
   return !!(me && (me.role==='총무' || me.role==='회장'));
 }
+/* 알림을 받는 사람이 총무이므로, 총무 본인이 한 수정만 알림에서 제외한다.
+   회장도 관리자 화면을 쓰지만 응답은 총무가 알아야 하므로 알림 대상이다. */
+function isTreasurerActor(){
+  if(!currentUser) return false;
+  if(currentUser.email && ADMIN_EMAILS.includes(currentUser.email)) return true;
+  const me = memberById(currentUser.memberId);
+  return !!(me && me.role==='총무');
+}
 function isMember(){
   return !!currentUser;
 }
@@ -833,9 +841,20 @@ async function slackDM(list){
   if(!data) throw new Error('중계 함수 응답을 읽을 수 없습니다');
   return data;
 }
+/* 관리자 표에서 여러 칸을 연달아 고쳐도 알림이 한 번만 가도록 모아서 보낸다 */
+const notifyTimers = {};
+function notifyRecordChange(memberId){
+  if(isTreasurerActor()) return;               // 총무 본인의 수정은 제외
+  clearTimeout(notifyTimers[memberId]);
+  notifyTimers[memberId] = setTimeout(()=>{
+    const m = memberById(memberId);
+    const r = cur && cur.records ? cur.records[memberId] : null;
+    if(m && r) notifyRecordSubmit(m, r);
+  }, 3000);
+}
 function notifyRecordSubmit(m,r){
   try{
-    if(isAdmin()) return; // 관리자 본인의 수정은 알림 제외
+    if(isTreasurerActor()) return; // 알림을 받는 총무 본인의 수정만 제외
     const s=recordSummary(r);
     const ref=db.ref(NOTIF_PATH).push({ts:firebase.database.ServerValue.TIMESTAMP, monthId:curId, name:m.name, att:s.att, movie:s.movie, time:s.time, party:s.party});
     const text=`🎬 [씨네시스 ${curId}] ${m.name} — ${s.att}`+(r.attending===true?` · ${s.movie} ${s.time} · 뒷풀이 ${s.party}`:'');
@@ -1527,6 +1546,7 @@ function renderActivityTableAdmin(t){
       else if(r.attending&&!r.movieId&&cur.movies[0]){r.movieId=cur.movies[0].id;r.movieTime=(cur.movies[0].times||[])[0]||null;}
       if(r.attending&&r.movieId) autoAddToLibrary(r.movieId);
       saveMonth();renderActivity();renderFinance();
+      notifyRecordChange(id);
     };
     const mvSel=tr.querySelector('[data-act=mv-title]');
     const tmSel=tr.querySelector('[data-act=mv-time]');
@@ -1541,11 +1561,12 @@ function renderActivityTableAdmin(t){
         if(times.length){r.movieTime=times[0];tmSel.value=times[0];}
       }
       saveMonth();renderMovies();updateSummaryCards();renderFinance();
+      notifyRecordChange(id);
     };
-    if(tmSel) tmSel.onchange=e=>{rec(id).movieTime=e.target.value||null;clearNotice(id);saveMonth();renderActivityTable();renderMovies();updateSummaryCards();renderFinance();};
+    if(tmSel) tmSel.onchange=e=>{rec(id).movieTime=e.target.value||null;clearNotice(id);saveMonth();renderActivityTable();renderMovies();updateSummaryCards();renderFinance();notifyRecordChange(id);};
     const st=tr.querySelector('[data-act=seat]'); if(st)st.onchange=e=>{rec(id).seat=e.target.value;const c=clearNotice(id);saveMonth();if(c)renderActivityTable();};
     const tk=tr.querySelector('[data-act=ticket]'); if(tk)tk.onclick=()=>{rec(id).ticketGiven=!rec(id).ticketGiven;saveMonth();renderActivityTable();updateSummaryCards();};
-    const af=tr.querySelector('[data-act=after]'); if(af)af.onclick=()=>{const r=rec(id);r.afterparty=!r.afterparty;saveMonth();renderActivityTable();updateSummaryCards();renderFinance();};
+    const af=tr.querySelector('[data-act=after]'); if(af)af.onclick=()=>{const r=rec(id);r.afterparty=!r.afterparty;saveMonth();renderActivityTable();updateSummaryCards();renderFinance();notifyRecordChange(id);};
     const nt=tr.querySelector('[data-act=notice]'); if(nt)nt.onclick=()=>openMemberBookingModal(id);
   });
 }
