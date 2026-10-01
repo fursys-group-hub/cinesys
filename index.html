@@ -2596,7 +2596,7 @@ function renderPartyExpense(){
     const mLabel = managed.length > 1 ? `${managed.length}명` : '본인';
     const manageBtn = canEdit(m.id) ? `<button class="btn xs ghost" data-act="manage-members" style="margin-left:6px;font-size:10px;padding:2px 6px;">${mLabel}</button>` : '';
     // 합쳐진 회원 이름을 밑에 적어 누가 포함됐는지 보이게 한다
-    const others = managed.filter(id=>id!==m.id).map(id=>(members.find(x=>x.id===id)||{}).name).filter(Boolean);
+    const others = managed.filter(id=>id!==m.id && cur.records[id]?.attending).map(id=>(members.find(x=>x.id===id)||{}).name).filter(Boolean);
     const groupNote = others.length
       ? `<div style="font-size:10.5px;color:var(--ink3);margin-top:2px;line-height:1.4;">+ ${others.map(esc).join(', ')}</div>`
       : '';
@@ -2657,7 +2657,18 @@ function openManagedMembersModal(memberId){
   const m=members.find(x=>x.id===memberId); if(!m) return;
   const p=partyExp(memberId);
   const current=p.managedMemberIds||[memberId];
-  const sorted=[...activeMembers()].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  /* 이번 달 참석자만 고를 수 있다 (불참·미정 회원은 목록에서 뺀다).
+     이미 본인 금액·항목·영수증을 작성했거나 다른 결제자의 담당 인원으로 선택된 회원도 뺀다.
+     단, 지금 이 결제자에게 이미 체크된 회원은 해제할 수 있게 남긴다. */
+  const pexp=cur.finance.partyExpenses||{};
+  const takenByOther=id=>Object.entries(pexp).some(([pid,o])=>pid!==memberId&&o&&(o.managedMemberIds||[]).length>1&&o.managedMemberIds.includes(id));
+  const hasOwnEntry=id=>{
+    const o=pexp[id]||{};
+    return Number(o.amount)>0||!!(o.item||'').trim()||((cur.finance.memberReceipts||{})[id]||[]).length>0||(o.managedMemberIds||[]).length>1;
+  };
+  const sorted=attendees()
+    .filter(mem=>mem.id===memberId||current.includes(mem.id)||(!takenByOther(mem.id)&&!hasOwnEntry(mem.id)))
+    .sort((a,b)=>a.name.localeCompare(b.name,'ko'));
   const rows=sorted.map(mem=>`
     <label style="display:flex;align-items:center;gap:10px;padding:9px 4px;cursor:pointer;border-bottom:1px solid var(--line);">
       <input type="checkbox" class="managed-cb" value="${mem.id}" ${current.includes(mem.id)?'checked':''} style="width:15px;height:15px;cursor:pointer;accent-color:var(--sepia);">
