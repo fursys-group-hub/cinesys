@@ -144,11 +144,17 @@ async function resolveAudience(key, title, year) {
   if (!title) return null;
   const yr = year ? String(year) : '';
   const url = `${KOBIS}/movie/searchMovieList.json?key=${key}&movieNm=${encodeURIComponent(title)}`
-    + `&openStartDt=${yr}&openEndDt=${yr ? String(Number(yr) + 1) : ''}&itemPerPage=5`;
+    + `&openStartDt=${yr}&openEndDt=${yr ? String(Number(yr) + 1) : ''}&itemPerPage=20`;
   const data = await getJson(url);
   const list = (data && data.movieListResult && data.movieListResult.movieList) || [];
   if (!list.length) return null;
-  const { movieCd, openDt } = list[0];
+  /* "클래식"처럼 흔한 낱말은 상영회·특별전까지 수십 건이 잡힌다.
+     제목이 정확히 같은 것을 먼저, 그중에서도 개봉일이 있는 것을 고른다. */
+  const want = String(title).trim();
+  const exact = list.filter(m => (m.movieNm || '').trim() === want);
+  const best = exact.find(m => m.openDt) || exact[0]
+            || list.find(m => m.openDt) || list[0];
+  const { movieCd, openDt } = best;
   const openDate = parseOpenDt(openDt);
   if (!movieCd || !openDate) return null;
   return { movieCd, openDt, audiAcc: await weeklyAcc(key, movieCd, openDate) };
