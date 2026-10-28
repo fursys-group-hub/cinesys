@@ -28,8 +28,13 @@ const json = (statusCode, obj) => ({
   body: JSON.stringify(obj),
 });
 
-const allowedOrigins = () =>
-  (process.env.ALLOWED_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
+/* 사내 호스트는 주소가 종종 바뀐다(app2 → app3 …). 그때마다 조용히 막히지 않도록
+   회사 도메인은 기본으로 허용하고, ALLOWED_ORIGIN으로 더 추가할 수 있게 한다. */
+const COMPANY_ORIGIN = 'https://*.fursys.com';
+const allowedOrigins = () => {
+  const extra = (process.env.ALLOWED_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
+  return [COMPANY_ORIGIN, ...extra];
+};
 
 /* 허용 출처는 와일드카드를 쓸 수 있다 — 예: https://*.fursys.com
    사내 포털이 여러 호스트로 서비스하는 경우를 하나로 담기 위함 */

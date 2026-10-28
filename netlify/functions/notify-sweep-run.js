@@ -9,8 +9,13 @@
  */
 const { sweep } = require('./lib/sweep');
 
-const allowedOrigins = () =>
-  (process.env.ALLOWED_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
+/* 사내 호스트는 주소가 종종 바뀐다(app2 → app3 …). 그때마다 조용히 막히지 않도록
+   회사 도메인은 기본으로 허용하고, ALLOWED_ORIGIN으로 더 추가할 수 있게 한다. */
+const COMPANY_ORIGIN = 'https://*.fursys.com';
+const allowedOrigins = () => {
+  const extra = (process.env.ALLOWED_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
+  return [COMPANY_ORIGIN, ...extra];
+};
 
 function originMatches(pattern, origin) {
   if (!origin) return false;
