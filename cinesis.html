@@ -2644,7 +2644,10 @@ function renderPartyExpense(){
   const hasAmt = Object.values(pexp).some(p=>p&&Number(p.amount)>0);
   const peEdit = !hasAmt || isEditing("party");
   // 총무는 보기/수정 모드를 따르고, 회원은 본인 줄만 수정한다
+  // 금액·항목 입력은 보기/수정 모드를 따른다
   const canEdit = id => isAdmin() ? peEdit : (id === myMemberId);
+  // 영수증 업로드는 모드와 무관하다 — 총무는 전원, 회원은 본인 것만
+  const canUploadFor = id => isAdmin() || id === myMemberId;
 
   if(isAdmin() && hasAmt){
     const bar=document.getElementById("partyEditBar");
@@ -2682,7 +2685,7 @@ function renderPartyExpense(){
   t.querySelectorAll('[data-act=upload-receipt]').forEach(btn=>{
     const mid=btn.dataset.memberId;
     btn.onclick=()=>{
-      if(!canEdit(mid)){toast('본인 영수증만 업로드할 수 있습니다');return;}
+      if(!canUploadFor(mid)){toast('본인 영수증만 업로드할 수 있습니다');return;}
       const recs=(cur.finance?.memberReceipts||{})[mid]||[];
       if(recs.length) viewReceiptsForMember(mid);
       else uploadReceiptForMember(mid);
