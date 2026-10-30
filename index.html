@@ -1941,6 +1941,50 @@ function openMemberVoteModal(memberId){
 
 function renderActivity(){ renderMovies(); renderActivityTable(); updateSummaryCards(); renderConfirmSection(); renderRouletteSectionVisibility(); equalizeTopPanels(); renderActivityDateBanner(); renderVoteSection(); }
 
+/* 확정 후 참석자 명단 — 가나다순. 다른 곳에 붙여넣기 쉽게 복사 버튼을 둔다 */
+function attendeeNames(){
+  return attendees().map(m=>m.name).sort((a,b)=>a.localeCompare(b,'ko'));
+}
+function attendeeListHtml(){
+  const names = attendeeNames();
+  if(!names.length) return '';
+  return `
+    <div style="margin-top:14px;padding:12px 14px;background:var(--paper2);border:1px solid var(--line);border-radius:5px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px;">
+        <span style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;">참석자 ${names.length}명</span>
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn xs ghost" data-copy="comma" style="font-size:10.5px;padding:3px 9px;">📋 이름 복사</button>
+          <button class="btn xs ghost" data-copy="lines" style="font-size:10.5px;padding:3px 9px;">📋 세로로 복사</button>
+        </div>
+      </div>
+      <div id="attendeeNameList" style="font-size:13.5px;line-height:1.75;color:var(--ink);word-break:keep-all;">${esc(names.join(', '))}</div>
+    </div>`;
+}
+async function copyText(text, okMsg){
+  try{
+    await navigator.clipboard.writeText(text);
+    toast(okMsg);
+  }catch(e){
+    // 클립보드 권한이 없는 환경 대비
+    const ta=document.createElement('textarea');
+    ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); toast(okMsg); }
+    catch(_){ toast('복사에 실패했습니다 — 명단을 직접 선택해 복사해주세요'); }
+    ta.remove();
+  }
+}
+function bindAttendeeCopy(root){
+  (root||document).querySelectorAll('[data-copy]').forEach(btn=>{
+    btn.onclick=()=>{
+      const names=attendeeNames();
+      if(!names.length){ toast('참석자가 없습니다'); return; }
+      const sep = btn.dataset.copy==='lines' ? '\n' : ', ';
+      copyText(names.join(sep), `참석자 ${names.length}명을 복사했습니다 ✓`);
+    };
+  });
+}
+
 function renderConfirmSection(){
   const section = document.getElementById('confirmSection');
   if(!section || !cur) return;
@@ -1960,9 +2004,11 @@ function renderConfirmSection(){
              </div>
              <div style="margin-top:6px;font-size:11.5px;color:var(--ink3);">${resetHint}</div>`
           : '');
+    section.insertAdjacentHTML('beforeend', attendeeListHtml());
     const ub = document.getElementById('unconfirmBtn');
     if(ub) ub.onclick = unconfirmAttendance;
     bindEditToggles(section);
+    bindAttendeeCopy(section);
   } else if(isAdmin()){
     const newSys = isNewReviewSystem();
     section.innerHTML = `<button class="btn primary lg" id="confirmBtn">✅ 참석 확정하기</button><div style="margin-top:8px;font-size:12.5px;color:var(--ink3)">확정하면 <strong>${newSys ? '집계·정산' : '룰렛 당첨자·집계·정산'}</strong>이 이 시점 데이터로 결정됩니다. 참석/뒷풀이는 확정 후에도 수정 가능합니다.</div>`;
