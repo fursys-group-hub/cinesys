@@ -2457,7 +2457,6 @@ function openMemberBookingModal(memberId){
 function renderRouletteSectionVisibility(){
   const sec = document.getElementById('sec-roulette');
   if(!sec || !cur) return;
-  if(isEventMonth()){ sec.style.display = 'none'; return; }  // 영화를 안 보는 달
   if(isNewReviewSystem()){
     sec.style.display = ''; // 신 시스템: 확정 여부 무관하게 항상 표시
     renderReview();
@@ -3809,7 +3808,6 @@ function reviewState(monthId){
   const endIdx = getMonthTurnIdx(monthId);
   for(let i=0; i<=endIdx; i++){
     const mid = turnIdxToMonthId(i);
-    if(isEventMonth(monthCache[mid])){ st.history[mid]=null; if(mid===monthId) st.reviewer=null; continue; }
     const att = monthAttendees(mid);
     let picked = null;
     if(att && att.size){
