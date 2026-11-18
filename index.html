@@ -3817,6 +3817,8 @@ function renderPartyTable(){
 
 /* ============== REVIEW ORDER ============== */
 const REVIEW_START_MONTH = '2026-07'; // 가나다 순 방식 시작 월
+const ROULETTE_START_MONTH = '2026-05'; // 룰렛 시작 월 — 그 전에는 회장이 후기를 썼다
+function isPreRouletteMonth(){ return !!curId && curId < ROULETTE_START_MONTH; }
 
 function isNewReviewSystem(){ return !!curId && curId >= REVIEW_START_MONTH; }
 
@@ -4001,6 +4003,15 @@ function renderReview(){
     return;
   }
 
+  // 룰렛 이전(1~4월) — 회장이 후기를 썼다. 룰렛은 보여주지 않는다
+  if(isPreRouletteMonth()){
+    if(titleEl)     titleEl.innerHTML = '<span class="ic">✍️</span> 이달의 후기 담당';
+    if(rouletteUI)  rouletteUI.style.display  = 'none';
+    if(reviewOrdUI) reviewOrdUI.style.display  = 'none';
+    renderReviewerBoard();
+    return;
+  }
+
   // 구 시스템 (룰렛)
   if(titleEl)     titleEl.innerHTML = '<span class="ic">🎡</span> 후기 당첨 룰렛';
   if(rouletteUI)  rouletteUI.style.display  = '';
@@ -4123,11 +4134,40 @@ function commitWinnerDisplay(m, saveResult=false){
   if(popup&&nameEl){nameEl.textContent=m.name+'님';popup.style.display='flex';}
   renderReviewerBoard();
 }
+/* 룰렛 이전(1~4월) 후기 담당 — 그 달 후기를 쓴 사람과 영화를 한 번에 보여준다 */
+function renderPreRouletteBoard(b){
+  const byWriter = new Map();                      // 담당자 → 영화 제목들
+  (cur.movies || []).forEach(mv => {
+    const wid = (cur.reviewers || {})[mv.id];
+    if(!wid) return;
+    if(!byWriter.has(wid)) byWriter.set(wid, []);
+    byWriter.get(wid).push(mv.title);
+  });
+  if(!byWriter.size){
+    b.innerHTML = '<div class="rb-none" style="padding:4px 0;">후기 담당 기록이 없습니다.</div>';
+    return;
+  }
+  b.innerHTML = [...byWriter.entries()].map(([wid, titles]) => {
+    const w = memberById(wid);
+    return '<div class="rb-card">' +
+      '<div class="rb-win" style="margin-bottom:4px;">✍️ ' + esc(w ? w.name : '') + '</div>' +
+      '<div class="rb-movie" style="font-size:11.5px;color:var(--ink3);font-weight:400;">' +
+        esc(titles.join(' · ')) + '</div>' +
+    '</div>';
+  }).join('') +
+  '<div style="font-size:11px;color:var(--ink3);line-height:1.6;margin-top:8px;">' +
+    '룰렛 이전 — 회장이 후기를 쓰던 때입니다.' +
+  '</div>';
+}
+
 function renderReviewerBoard(){
   const b=document.getElementById('reviewerBoard'); if(!b||!cur) return; b.innerHTML='';
   // 신 시스템: reviewOrderUI가 모두 담당 — 보드는 숨김
   if(isNewReviewSystem()){ b.style.display='none'; return; }
   b.style.display='';
+
+  // 룰렛 이전 달은 담당자 한 명을 그대로 보여준다 (회장이 썼다)
+  if(isPreRouletteMonth()){ renderPreRouletteBoard(b); return; }
 
   if(!cur.movies.length){b.innerHTML='<div class="empty">상영작이 없습니다.</div>';return;}
   if(!isAdmin()){
