@@ -534,6 +534,7 @@
             <div id="reviewOrderUI" style="display:none;"></div>
 
             <div class="reviewer-board" id="reviewerBoard"></div>
+            <div id="reviewCommentUI"></div>
           </div>
         </div>
       </div>
@@ -1324,7 +1325,7 @@ const cloneJson = o => JSON.parse(JSON.stringify(o));
 const safeParse = s => { try{ return JSON.parse(s); }catch(e){ return null; } };
 
 // 회원별로 나뉘어 여러 사람이 동시에 건드리는 항목들
-const PER_MEMBER_MAPS = [['records'], ['finance','partyExpenses'], ['finance','memberReceipts']];
+const PER_MEMBER_MAPS = [['records'], ['finance','partyExpenses'], ['finance','memberReceipts'], ['reviewComments']];
 const getPath = (o,p) => p.reduce((a,k)=>(a&&a[k]!==undefined)?a[k]:undefined, o);
 function setPath(o,p,v){
   let t=o;
@@ -1528,7 +1529,7 @@ function renderActivityTable(){
   else renderActivityTableMember(t, isAdmin());
 }
 function renderActivityTableAdmin(t){
-  const sorted=[...activeMembers()].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  const sorted=[...monthMembers(curId)].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
   const locked=false; // 관리자(총무)는 확정 이후에도 참석/영화/뒷풀이를 수정할 수 있음
   const ev=isEventMonth();
   let h=`<thead><tr><th>이름</th><th>참석</th>${ev?'':'<th>관람 영화</th><th>좌석</th><th>티켓 전달</th>'}<th>뒷풀이</th><th>연속불참</th>${ev?'':'<th>예매 안내</th>'}</tr></thead><tbody>`;
@@ -1601,7 +1602,7 @@ function renderActivityTableAdmin(t){
   });
 }
 function renderActivityTableMember(t, readOnly){
-  const sorted=[...activeMembers()].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  const sorted=[...monthMembers(curId)].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
   const locked=cur.confirmed;
   // 회원은 본인 줄만 수정할 수 있다 (총무·회장은 별도 표를 사용)
   const myId=currentUser?currentUser.memberId:null;
@@ -1984,61 +1985,94 @@ function openMemberVoteModal(memberId){
 
 function renderActivity(){ applyMonthType(); renderMovies(); renderActivityTable(); updateSummaryCards(); renderConfirmSection(); renderRouletteSectionVisibility(); equalizeTopPanels(); renderActivityDateBanner(); renderVoteSection(); }
 
-/* ── 연간 활동 기록 ── 시상(개근상·리뷰어상·참여상) 근거로 쓴다 */
+/* ── 연간 활동 기록 ── 시상(개근상·리뷰어상·참여상) 근거로 쓴다
+   · 후기는 라이브러리의 후기 담당자 기준 — 한 달에 여러 편을 봐도 1회로 센다
+   · 그 달에 회원이 아니었으면 그 달 집계에서 빼고, 중간에 탈퇴한 사람도 올해 기록에는 남긴다
+   · 아직 아무도 응답하지 않은 달(진행 전)은 집계에서 뺀다 */
 function yearStats(year){
-  const ids = monthIndex.filter(id => id.startsWith(year + '-')).sort();
-  const rows = activeMembers().map(m => {
-    let att = 0, abs = 0, none = 0, rev = 0;
+  const all = monthIndex.filter(id => id.startsWith(year + '-')).sort();
+  const ids = all.filter(id => {
+    const mo = monthCache[id];
+    if(!mo) return false;
+    return Object.values(mo.records || {}).some(r => r && (r.attending === true || r.attending === false));
+  });
+  const poolOf = {};
+  ids.forEach(id => { poolOf[id] = new Set(monthMembers(id).map(m => m.id)); });
+
+  // 후기 — 라이브러리 기준, 달 단위로 1회
+  const revOf = {};
+  library.forEach(e => {
+    if(!String(e.watchedMonth || '').startsWith(year + '-')) return;
+    const nm = String(e.reviewerName || '').trim(); if(!nm) return;
+    (revOf[nm] = revOf[nm] || new Set()).add(e.watchedMonth);
+  });
+
+  const pool = members.filter(m => ids.some(id => poolOf[id].has(m.id)));
+  const rows = pool.map(m => {
+    let att = 0, abs = 0, none = 0, cmt = 0, span = 0;
     ids.forEach(id => {
       const mo = monthCache[id]; if(!mo) return;
+      if(!poolOf[id].has(m.id)) return;          // 그 달엔 회원이 아니었다
+      span++;
       const r = (mo.records || {})[m.id];
       if(!r || (r.attending !== true && r.attending !== false)) none++;
       else if(r.attending === true) att++;
       else abs++;
-      const reviewer = getMonthReviewer(id);
-      if(reviewer && reviewer.id === m.id) rev++;
+      if((mo.reviewComments || {})[m.id]) cmt++;
     });
-    return { name: m.name, att: att, abs: abs, none: none, rev: rev };
+    return { name: m.name, att: att, abs: abs, none: none, cmt: cmt, span: span,
+             rev: (revOf[m.name] || new Set()).size, left: !!m.leaveDate };
   });
   return { months: ids, rows: rows };
 }
 
-function openYearStatsModal(){
+async function openYearStatsModal(){
   const year = (curId || '').slice(0, 4) || String(new Date().getFullYear());
+  // 캐시에 없는 달도 불러와야 집계가 빠지지 않는다
+  for(const id of monthIndex){
+    if(id.startsWith(year + '-') && !monthCache[id]){
+      const mo = await sGet(mKey(id), null);
+      if(mo) monthCache[id] = mo;
+    }
+  }
   const st = yearStats(year);
   if(!st.months.length){
     openModal('📊 연간 기록', '<div class="empty">기록이 없습니다.</div>', function(){}, '확인');
     return;
   }
   const sorted = st.rows.slice().sort(function(a,b){
-    return b.att - a.att || b.rev - a.rev || a.name.localeCompare(b.name, 'ko');
+    return b.att - a.att || b.rev - a.rev || b.cmt - a.cmt || a.name.localeCompare(b.name, 'ko');
   });
-  const max = Math.max.apply(null, st.rows.map(function(r){ return r.att; }));
+  const total = st.months.length;
   const monthLabel = st.months.map(function(m){ return Number(m.slice(5)) + '월'; }).join(', ');
   const body =
     '<p style="font-size:12.5px;color:var(--ink2);line-height:1.7;margin-bottom:12px;">' +
-      year + '년 활동 ' + st.months.length + '회 (' + monthLabel + ') 기준입니다.<br>참석이 많은 순으로 정렬했습니다.' +
+      year + '년 활동 ' + total + '회 (' + monthLabel + ') 기준입니다.<br>' +
+      '후기는 그 달 후기를 쓴 횟수(여러 편을 봐도 1회), 댓글은 EP 후기에 댓글을 단 횟수입니다.' +
     '</p>' +
     '<div style="max-height:340px;overflow:auto;">' +
       '<table class="tbl" style="font-size:13px;"><thead><tr>' +
-        '<th>이름</th><th>참석</th><th>불참</th><th>미응답</th><th>후기 작성</th>' +
+        '<th>이름</th><th>참석</th><th>불참</th><th>미응답</th><th>후기</th><th>댓글</th>' +
       '</tr></thead><tbody>' +
       sorted.map(function(r){
-        return '<tr><td class="name">' + esc(r.name) +
-          (r.att === max && max > 0 ? ' <span class="pill tr xs">개근</span>' : '') + '</td>' +
-          '<td><b>' + r.att + '</b></td><td>' + r.abs + '</td><td>' + r.none + '</td><td>' + r.rev + '</td></tr>';
+        const badge = (r.att === total && total > 0)
+          ? ' <span class="pill tr xs">개근</span>'
+          : (r.span < total ? ' <span style="font-size:10px;color:var(--ink3);">' + r.span + '회 중</span>' : '');
+        return '<tr><td class="name"' + (r.left ? ' style="color:var(--ink3);"' : '') + '>' + esc(r.name) +
+          (r.left ? ' <span style="font-size:10px;color:var(--ink3);">탈퇴</span>' : '') + badge + '</td>' +
+          '<td><b>' + r.att + '</b></td><td>' + r.abs + '</td><td>' + r.none + '</td>' +
+          '<td>' + (r.rev || '') + '</td><td>' + (r.cmt || '') + '</td></tr>';
       }).join('') +
       '</tbody></table></div>' +
     '<button class="btn sm ghost" id="yearStatsCopy" style="margin-top:10px;font-size:11.5px;">📋 표 복사</button>';
   openModal('📊 ' + year + '년 활동 기록', body, function(){}, '확인');
   const cp = document.getElementById('yearStatsCopy');
   if(cp) cp.onclick = function(){
-    const text = ['이름\t참석\t불참\t미응답\t후기']
-      .concat(sorted.map(function(r){ return [r.name, r.att, r.abs, r.none, r.rev].join('\t'); })).join('\n');
+    const text = ['이름\t참석\t불참\t미응답\t후기\t댓글']
+      .concat(sorted.map(function(r){ return [r.name, r.att, r.abs, r.none, r.rev, r.cmt].join('\t'); })).join('\n');
     copyText(text, sorted.length + '명 기록을 복사했습니다 ✓');
   };
 }
-
 /* ── 올해의 영화 어워즈 ── 라이브러리의 올해 관람작으로 투표한다 */
 const AWARD_KEY = function(y){ return 'cns-awards-' + y; };
 const awardsCache = {};
@@ -2570,6 +2604,20 @@ async function unconfirmAttendance(){
 
 /* ============== FINANCE ============== */
 function activeMembers(){ return members.filter(m=>!m.leaveDate); }
+/* 그 달에 회원이었던 사람 — 지난 달을 열면 그때 멤버가 나와야 한다.
+   (가입 전인 사람은 빼고, 그 뒤에 탈퇴한 사람은 그대로 둔다) */
+function monthMembers(monthId){
+  const mid = monthId || curId;
+  if(!mid) return activeMembers();
+  const mo = monthCache[mid] || (mid===curId ? cur : null);
+  const rec = (mo && mo.records) || {};
+  return members.filter(m=>{
+    if(rec[m.id]) return true;                       // 기록이 있으면 무조건 포함
+    if(m.joinDate  && m.joinDate  > mid+'-31') return false;
+    if(m.leaveDate && m.leaveDate < mid+'-01') return false;
+    return true;
+  });
+}
 function attendees(){ return members.filter(m=>cur.records[m.id]&&cur.records[m.id].attending); }
 function partyAttendees(){ return members.filter(m=>cur.records[m.id]&&cur.records[m.id].attending&&cur.records[m.id].afterparty); }
 /* 지원금 산정 — 두 가지
@@ -3895,12 +3943,54 @@ function renderReviewOrderUI(){
   if(cur && reviewer){ cur.reviewer = reviewer.id; }
 }
 
+/* ── EP 후기 댓글 ──
+   후기 글에 댓글을 단 사람을 달마다 기록한다. EP는 자동으로 읽어올 수 없어
+   총무가 이름을 눌러 표시하고, 연간 기록에서 댓글 수로 집계된다. */
+function renderReviewComments(){
+  const wrap = document.getElementById('reviewCommentUI');
+  if(!wrap || !cur){ return; }
+  if(!cur.reviewComments) cur.reviewComments = {};
+  const done  = cur.reviewComments;
+  const list  = [...monthMembers(curId)].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+  const admin = isAdmin();
+  const cnt   = list.filter(m=>done[m.id]).length;
+  if(!list.length){ wrap.innerHTML=''; return; }
+
+  wrap.innerHTML =
+    '<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line);">' +
+      '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px;">' +
+        '<span style="font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--ink3);">EP 후기 댓글</span>' +
+        '<span style="font-size:13px;font-weight:700;color:' + (cnt?'var(--sage)':'var(--ink3)') + ';">' + cnt + '명</span>' +
+        (admin ? '<span style="font-size:10.5px;color:var(--ink3);margin-left:auto;">이름을 눌러 표시하세요</span>' : '') +
+      '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:5px;">' +
+        list.map(function(m){
+          return '<span class="chip ' + (done[m.id] ? 'on green' : '') + '" data-cmt="' + m.id + '"' +
+            (admin ? '' : ' style="cursor:default"') + '>' + esc(m.name) + '</span>';
+        }).join('') +
+      '</div>' +
+    '</div>';
+
+  if(!admin) return;
+  wrap.querySelectorAll('[data-cmt]').forEach(function(el){
+    el.onclick = function(){
+      const id = el.dataset.cmt;
+      if(cur.reviewComments[id]) delete cur.reviewComments[id];
+      else cur.reviewComments[id] = true;
+      saveMonth();
+      renderReviewComments();
+    };
+  });
+}
+
 /* ============== ROULETTE (구 시스템) ============== */
 let wheelAngle=0, spinning=false;
 function renderReview(){
   const titleEl     = document.getElementById('reviewPanelTitle');
   const rouletteUI  = document.getElementById('rouletteUI');
   const reviewOrdUI = document.getElementById('reviewOrderUI');
+
+  renderReviewComments();
 
   if(isNewReviewSystem()){
     if(titleEl)     titleEl.innerHTML = '<span class="ic">📋</span> 후기 순서';
@@ -4046,8 +4136,7 @@ function renderReviewerBoard(){
   }
   let hasAny=false;
   cur.movies.forEach(mv=>{
-    const attendees=Object.values(cur.records).filter(r=>r.attending&&r.movieId===mv.id).length;
-    if(attendees===0) return;
+    // 담당자가 공개된 영화는 그대로 보여준다 (지난 달 기록은 영화 선택이 비어 있을 수 있다)
     if(!(cur.revealed||{})[mv.id]) return;
     hasAny=true;
     const wid=cur.reviewers[mv.id];
@@ -4299,7 +4388,7 @@ function newMonth(){
       const subsidyMode=document.getElementById('nm-smode').value;
       const subsidyTotal=getNumVal(document.getElementById('nm-total'))||0;
       if(subsidyMode==='total' && subsidyTotal<=0){ toast('지원금 총액을 입력해주세요'); return false; }
-      const obj={id,label:labelOf(id),type,movies:[],records:{},finance:{perPerson,subsidyMode,subsidyTotal,movieCosts:[],partyExpenses:{},excessPayments:{}},reviewers:{},confirmed:false,prevMonthExclusions:[],revealed:{}};
+      const obj={id,label:labelOf(id),type,movies:[],records:{},finance:{perPerson,subsidyMode,subsidyTotal,movieCosts:[],partyExpenses:{},excessPayments:{}},reviewers:{},confirmed:false,prevMonthExclusions:[],revealed:{},reviewComments:{}};
       monthIndex.unshift(id); monthIndex.sort().reverse();
       await saveIndex(); await sSet(mKey(id),obj);
       curId=id; cur=obj; monthCache[id]=obj; baselineMonth=JSON.stringify(obj); buildMonthSelect(); renderAll();
