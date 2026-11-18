@@ -479,7 +479,7 @@
 
       <!-- 왼쪽: 상영작 + 참석표 -->
       <div class="activity-main">
-        <div class="panel">
+        <div class="panel" id="moviePanel">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
             <h2 style="margin-bottom:0;"><span class="ic">🎬</span> 현재 상영작</h2>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
@@ -491,7 +491,7 @@
         </div>
 
         <div class="panel">
-          <h2><span class="ic">✅</span> 참석 & 영화 선택</h2>
+          <h2 id="attendTitle"><span class="ic">✅</span> 참석 & 영화 선택</h2>
           <div class="desc">멤버별 참석 여부 · 관람 영화 · 좌석 · 뒷풀이 참석을 체크하세요.</div>
           <div class="scroll">
             <table class="tbl" id="activityTbl"></table>
@@ -547,7 +547,11 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
         <h2 style="margin-bottom:0"><span class="ic">📊</span> 정산 개요</h2>
         <div style="display:flex;align-items:center;gap:8px;">
-          <label style="font-family:'Montserrat',sans-serif;font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:1px;font-weight:600">1인당 지원금</label>
+          <select id="finSubsidyMode" class="admin-only" style="font-size:12px;padding:4px 6px;">
+            <option value="perPerson">1인당 지원금</option>
+            <option value="total">지원금 총액</option>
+          </select>
+          <label id="finSubsidyLabel" style="font-family:'Montserrat',sans-serif;font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:1px;font-weight:600">1인당 지원금</label>
           <input type="text" inputmode="numeric" id="finPerPerson" oninput="fmtNumInput(this)" style="width:110px">
         </div>
       </div>
@@ -562,7 +566,7 @@
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel" id="movieCostPanel">
       <h2><span class="ic">🎫</span> 영화비</h2>
       <div class="desc">영화·시간대별로 표시됩니다. 각 시간대의 예매 금액을 입력하세요.</div>
       <div id="movieCostsList"></div>
@@ -1524,7 +1528,8 @@ function renderActivityTable(){
 function renderActivityTableAdmin(t){
   const sorted=[...activeMembers()].sort((a,b)=>a.name.localeCompare(b.name,'ko'));
   const locked=false; // 관리자(총무)는 확정 이후에도 참석/영화/뒷풀이를 수정할 수 있음
-  let h=`<thead><tr><th>이름</th><th>참석</th><th>관람 영화</th><th>좌석</th><th>티켓 전달</th><th>뒷풀이</th><th>연속불참</th><th>예매 안내</th></tr></thead><tbody>`;
+  const ev=isEventMonth();
+  let h=`<thead><tr><th>이름</th><th>참석</th>${ev?'':'<th>관람 영화</th><th>좌석</th><th>티켓 전달</th>'}<th>뒷풀이</th><th>연속불참</th>${ev?'':'<th>예매 안내</th>'}</tr></thead><tbody>`;
   sorted.forEach(m=>{
     const r=cur.records[m.id]||{attending:null,movieId:null,movieTime:null,seat:'',afterparty:false,ticketGiven:false};
     const absences=consecutiveAbsences(m.id);
@@ -1534,26 +1539,26 @@ function renderActivityTableAdmin(t){
     h+=`<tr data-id="${m.id}">
       <td class="name">${esc(m.name)}</td>
       <td><span class="chip ${attClass}"${locked?' style="cursor:default"':''} data-act="att">${attText}</span></td>
-      <td>${att===true?(()=>{
+      ${ev?'':`<td>${att===true?(()=>{
         if(!cur.movies.length) return '<span style="color:var(--ink3)">상영작 없음</span>';
         const dis=locked?' disabled':'';
         const mvOpts=`<option value="">영화 선택</option>`+cur.movies.map(m=>`<option value="${m.id}" ${m.id===r.movieId?'selected':''}>${esc(m.title)}</option>`).join('');
         const selMv=cur.movies.find(m=>m.id===r.movieId);
         const tOpts=selMv?(selMv.times||[]).map(t=>`<option value="${t}" ${t===r.movieTime?'selected':''}>${t}</option>`).join(''):'';
         return `<div style="display:flex;flex-direction:column;gap:2px;min-width:90px"><select data-act="mv-title"${dis} style="font-size:12px${locked?';opacity:.7;cursor:default':''}">${mvOpts}</select><select data-act="mv-time"${dis} style="font-size:12px${locked?';opacity:.7;cursor:default':''};${selMv?'':'display:none'}">${tOpts||'<option>-</option>'}</select></div>`;
-      })():'<span style="color:var(--ink3)">-</span>'}</td>
-      <td>${att===true?`<input type="text" data-act="seat" value="${esc(r.seat||'')}" placeholder="좌석" style="width:55px${locked?';opacity:.7':''}"${locked?' disabled':''}>`:'<span style="color:var(--ink3)">-</span>'}</td>
-      <td>${att===true?`<span class="chip ${r.ticketGiven?'on green':''}"${locked?' style="cursor:default"':''} data-act="ticket">${r.ticketGiven?'전달':'미전달'}</span>`:'<span style="color:var(--ink3)">-</span>'}</td>
+      })():'<span style="color:var(--ink3)">-</span>'}</td>`}
+      ${ev?'':`<td>${att===true?`<input type="text" data-act="seat" value="${esc(r.seat||'')}" placeholder="좌석" style="width:55px${locked?';opacity:.7':''}"${locked?' disabled':''}>`:'<span style="color:var(--ink3)">-</span>'}</td>
+      <td>${att===true?`<span class="chip ${r.ticketGiven?'on green':''}"${locked?' style="cursor:default"':''} data-act="ticket">${r.ticketGiven?'전달':'미전달'}</span>`:'<span style="color:var(--ink3)">-</span>'}</td>`}
       <td>${att===true?`<span class="chip ${r.afterparty?'on gold':''}"${locked?' style="cursor:default"':''} data-act="after">${r.afterparty?'참석':'불참'}</span>`:'<span style="color:var(--ink3)">-</span>'}</td>
       <td>${renderAbsenceCell(absences)}</td>
-      <td>${att===true
+      ${ev?'':`<td>${att===true
         ? (r.movieId
             ? `<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
                  <button class="btn xs ghost" data-act="notice" style="padding:3px 8px;font-size:10.5px;white-space:nowrap;">${r.noticeSentAt?'📨 다시 안내':'📨 안내'}</button>
                  ${noticeStatusHtml(r)}
                </div>`
             : '<span style="color:var(--ink3);font-size:10.5px;white-space:nowrap;">영화 선택 후</span>')
-        : '<span style="color:var(--ink3)">-</span>'}</td>
+        : '<span style="color:var(--ink3)">-</span>'}</td>`}
     </tr>`;
   });
   h+='</tbody>'; t.innerHTML=h;
@@ -1603,7 +1608,8 @@ function renderActivityTableMember(t, readOnly){
     ? (myId?'<span style="font-size:10px;color:var(--ink3);font-weight:400;margin-left:5px;">본인 줄을 눌러 응답</span>'
            :'<span style="font-size:10px;color:var(--ink3);font-weight:400;margin-left:5px;">이름을 먼저 선택하세요</span>')
     : '';
-  let h=`<thead><tr><th>이름</th><th>참석${hint}</th><th>관람 영화</th><th>좌석</th><th>뒷풀이</th><th>연속불참</th><th>예매 안내</th></tr></thead><tbody>`;
+  const ev=isEventMonth();
+  let h=`<thead><tr><th>이름</th><th>참석${hint}</th>${ev?'':'<th>관람 영화</th><th>좌석</th>'}<th>뒷풀이</th><th>연속불참</th>${ev?'':'<th>예매 안내</th>'}</tr></thead><tbody>`;
   sorted.forEach(m=>{
     const r=cur.records[m.id]||{attending:null};
     const absences=consecutiveAbsences(m.id);
@@ -1618,15 +1624,15 @@ function renderActivityTableMember(t, readOnly){
         ${esc(m.name)}${m.id===myId?' <span class="pill self xs">본인</span>':''}
       </td>
       <td><span class="chip ${attClass}" style="${clickStyle}"${mine?` data-edit="${m.id}"`:''} title="${mine?'눌러서 응답':'본인 참석 정보만 수정할 수 있습니다'}">${attText}</span></td>
-      <td style="font-size:13px;color:${mv?'var(--ink)':'var(--ink3)'};">${mv?esc(mv.title)+' <span style="font-family:\'Montserrat\';font-size:11px;">'+esc(r.movieTime||'')+'</span>':'-'}</td>
+      ${ev?'':`<td style="font-size:13px;color:${mv?'var(--ink)':'var(--ink3)'};">${mv?esc(mv.title)+' <span style="font-family:\'Montserrat\';font-size:11px;">'+esc(r.movieTime||'')+'</span>':'-'}</td>
       <td>${att===true
         ? ((r.seat||'').trim()
             ? `<span style="font-family:'Montserrat';font-size:12.5px;font-weight:600;">${esc(r.seat.trim())}</span>`
             : '<span style="color:var(--ink3);font-size:12px;">미정</span>')
-        : '<span style="color:var(--ink3)">-</span>'}</td>
+        : '<span style="color:var(--ink3)">-</span>'}</td>`}
       <td>${att===true?`<span class="chip ${r.afterparty?'on gold':''}" style="cursor:default;">${r.afterparty?'참석':'불참'}</span>`:'<span style="color:var(--ink3)">-</span>'}</td>
       <td>${renderAbsenceCell(absences)}</td>
-      <td>${noticeStatusHtml(r)||'<span style="color:var(--ink3)">-</span>'}</td>
+      ${ev?'':`<td>${noticeStatusHtml(r)||'<span style="color:var(--ink3)">-</span>'}</td>`}
     </tr>`;
   });
   h+='</tbody>'; t.innerHTML=h;
@@ -1668,7 +1674,7 @@ function openAttendancePopup(memberId){
         <label style="${radioLbl}"><input type="radio" name="att" value="none" ${attNull}> 미정</label>
       </div>
     </div>
-    <div id="popMovieWrap" style="${r.attending===true?'':'display:none'}">
+    <div id="popMovieWrap" style="${(isEventMonth()||r.attending!==true)?'display:none':''}">
       <div style="${lbl}">관람 영화</div>
       <div id="popMovieOptions" style="display:flex;flex-direction:column;gap:2px;">${movieRadios}</div>
     </div>
@@ -1676,7 +1682,7 @@ function openAttendancePopup(memberId){
       <div style="${lbl}">상영 시간</div>
       <div id="popTimeOptions" style="display:flex;gap:14px;flex-wrap:wrap;">${initTimeHtml}</div>
     </div>
-    <div id="popSeatWrap" style="${r.attending===true?'':'display:none'}">
+    <div id="popSeatWrap" style="${(isEventMonth()||r.attending!==true)?'display:none':''}">
       <div style="${lbl}">선호 좌석</div>
       <input id="popSeat" type="text" placeholder="예) A12, B5-B6" value="${esc(r.seat||'')}" style="width:100%;font-size:13.5px;padding:8px 10px;border:1px solid var(--line);border-radius:3px;font-family:inherit;">
     </div>
@@ -1716,7 +1722,7 @@ function openAttendancePopup(memberId){
     document.querySelectorAll('input[name=att]').forEach(radio=>{
       radio.onchange=()=>{
         const show=document.querySelector('input[name=att]:checked')?.value==='yes';
-        document.getElementById('popMovieWrap').style.display=show?'':'none';
+        document.getElementById('popMovieWrap').style.display=(show&&!isEventMonth())?'':'none';
         document.getElementById('popSeatWrap').style.display=show?'':'none';
         document.getElementById('popPartyWrap').style.display=show?'':'none';
         if(!show) document.getElementById('popTimeWrap').style.display='none';
@@ -1974,7 +1980,20 @@ function openMemberVoteModal(memberId){
   },'투표하기');
 }
 
-function renderActivity(){ renderMovies(); renderActivityTable(); updateSummaryCards(); renderConfirmSection(); renderRouletteSectionVisibility(); equalizeTopPanels(); renderActivityDateBanner(); renderVoteSection(); }
+function renderActivity(){ applyMonthType(); renderMovies(); renderActivityTable(); updateSummaryCards(); renderConfirmSection(); renderRouletteSectionVisibility(); equalizeTopPanels(); renderActivityDateBanner(); renderVoteSection(); }
+
+/* 달 유형 — 영화를 보지 않는 행사 달(송년회 등)을 따로 둔다.
+   기존 달은 표시가 없으므로 영화 관람으로 본다. */
+const isEventMonth = mo => ((mo||cur||{}).type === 'event');
+function applyMonthType(){
+  const ev = isEventMonth();
+  const mp = document.getElementById('moviePanel');
+  if(mp) mp.style.display = ev ? 'none' : '';
+  const mc = document.getElementById('movieCostPanel');
+  if(mc) mc.style.display = ev ? 'none' : '';
+  const at = document.getElementById('attendTitle');
+  if(at) at.innerHTML = ev ? '<span class="ic">✅</span> 참석' : '<span class="ic">✅</span> 참석 & 영화 선택';
+}
 
 /* 확정 후 참석자 명단 — 가나다순. 다른 곳에 붙여넣기 쉽게 복사 버튼을 둔다 */
 function attendeeNames(){
@@ -2285,6 +2304,7 @@ function openMemberBookingModal(memberId){
 function renderRouletteSectionVisibility(){
   const sec = document.getElementById('sec-roulette');
   if(!sec || !cur) return;
+  if(isEventMonth()){ sec.style.display = 'none'; return; }  // 영화를 안 보는 달
   if(isNewReviewSystem()){
     sec.style.display = ''; // 신 시스템: 확정 여부 무관하게 항상 표시
     renderReview();
@@ -2298,7 +2318,7 @@ function renderRouletteSectionVisibility(){
 async function confirmAttendance(){
   if(!cur) return;
   if(cur.confirmed){ toast('이미 확정되었습니다'); return; }
-  if(!cur.movies.length){ toast('상영작을 먼저 등록해주세요'); return; }
+  if(!isEventMonth() && !cur.movies.length){ toast('상영작을 먼저 등록해주세요'); return; }
   const attending = members.filter(m => cur.records[m.id] && cur.records[m.id].attending);
   if(!attending.length){ toast('참석자가 없습니다'); return; }
 
@@ -2400,7 +2420,23 @@ async function unconfirmAttendance(){
 function activeMembers(){ return members.filter(m=>!m.leaveDate); }
 function attendees(){ return members.filter(m=>cur.records[m.id]&&cur.records[m.id].attending); }
 function partyAttendees(){ return members.filter(m=>cur.records[m.id]&&cur.records[m.id].attending&&cur.records[m.id].afterparty); }
-function calcSubsidy(){ return (Number(cur.finance.perPerson)||30000)*attendees().length; }
+/* 지원금 산정 — 두 가지
+   참석자 기준: 참석 인원 × 1인당 (기본)
+   총액 고정  : 신청서에 적은 총액 그대로 (재적 인원 기준으로 승인된 경우) */
+const isTotalSubsidy = () => (cur.finance||{}).subsidyMode === 'total';
+const subsidyTotalAmount = () => Number((cur.finance||{}).subsidyTotal)||0;
+function calcSubsidy(){
+  if(isTotalSubsidy()) return subsidyTotalAmount();
+  return (Number(cur.finance.perPerson)||30000)*attendees().length;
+}
+// 정산 표의 1인당 기준 — 총액 모드에서는 재적 인원으로 나눈 값
+function subsidyPerMember(){
+  if(isTotalSubsidy()){
+    const n = activeMembers().length;
+    return n ? Math.round(subsidyTotalAmount()/n) : 0;
+  }
+  return Number((cur.finance||{}).perPerson)||30000;
+}
 /* 실제 참석자가 있는 상영 슬롯 키 집합 — 영화비 표에 렌더되는 행과 동일 기준 */
 function movieCostSlotKeys(){
   const keys=new Set();
@@ -2468,7 +2504,12 @@ function calcTotalSpend(){ return calcMovieTotal()+calcPartyTotal(); }
 
 function renderFinance(){
   const ppEl = document.getElementById('finPerPerson');
-  ppEl.value = (cur.finance.perPerson||30000).toLocaleString('ko-KR');
+  const modeEl = document.getElementById('finSubsidyMode');
+  const lblEl = document.getElementById('finSubsidyLabel');
+  const totalMode = isTotalSubsidy();
+  if(modeEl){ modeEl.value = totalMode ? 'total' : 'perPerson'; modeEl.disabled = !isAdmin(); modeEl.style.display = isAdmin() ? '' : 'none'; }
+  if(lblEl){ lblEl.textContent = totalMode ? '지원금 총액' : '1인당 지원금'; lblEl.style.display = isAdmin() ? 'none' : ''; }
+  ppEl.value = (totalMode ? subsidyTotalAmount() : (cur.finance.perPerson||30000)).toLocaleString('ko-KR');
   ppEl.disabled = !isAdmin();
   renderFinOverview();
   renderMovieCosts();
@@ -2510,7 +2551,7 @@ function renderEpVoucher(){
 function renderFinOverview(){
   const att = attendees().length;
   const per = Number(cur.finance.perPerson)||30000;
-  const subsidy = att * per;
+  const subsidy = calcSubsidy();
   const movies = calcMovieTotal();
   const partyT = calcPartyTotal();
   const spend = movies + partyT;
@@ -2522,7 +2563,7 @@ function renderFinOverview(){
     <div class="fin-stat accent">
       <div class="k">회사 지원금</div>
       <div class="v">${fmt(subsidy)}<span class="u">원</span></div>
-      <div style="font-size:10.5px;color:var(--ink3);margin-top:4px">${att}명 × ${fmt(per)}원</div>
+      <div style="font-size:10.5px;color:var(--ink3);margin-top:4px">${isTotalSubsidy()?`총액 고정 · 참석 ${att}명`:`${att}명 × ${fmt(per)}원`}</div>
     </div>
     <div class="fin-stat">
       <div class="k">영화비</div>
@@ -3243,7 +3284,7 @@ async function openReceiptCleanupModal(){
 /* 정산 행 + 목표액 계산 (렌더와 자동배분이 공유) */
 function settlementData(){
   if(!cur || !members || !members.length) return null;
-  const subsidyPer = cur.finance?.perPerson || 30000;
+  const subsidyPer = subsidyPerMember();
 
   const movieTitleMap = {};
   (cur.movies||[]).forEach(mv => { movieTitleMap[mv.id] = mv.title; });
@@ -3331,8 +3372,9 @@ function settlementData(){
   const sumSnack   = rows.reduce((s,r)=>s+r.snack,0);
 
   // 지원금 이내면 실지출 전액 집행, 초과하면 지원금 한도까지만 집행
-  const withinBudget = (sumMovie + sumSnack) <= sumSubsidy;
-  const targetTotal   = withinBudget ? sumMovie + sumSnack : sumSubsidy; // 영화비 + 입금액 목표 합계
+  const budget = calcSubsidy();   // 총액 모드면 승인 총액, 아니면 참석자×1인당
+  const withinBudget = (sumMovie + sumSnack) <= budget;
+  const targetTotal   = withinBudget ? sumMovie + sumSnack : budget; // 영화비 + 입금액 목표 합계
   const targetDeposit = targetTotal - sumMovie;                           // 입금액 목표 합계
 
   // 실제 입금액: 총무가 저장한 값이 있으면 그 값, 없으면 기본값
@@ -3614,6 +3656,7 @@ function reviewState(monthId){
   const endIdx = getMonthTurnIdx(monthId);
   for(let i=0; i<=endIdx; i++){
     const mid = turnIdxToMonthId(i);
+    if(isEventMonth(monthCache[mid])){ st.history[mid]=null; if(mid===monthId) st.reviewer=null; continue; }
     const att = monthAttendees(mid);
     let picked = null;
     if(att && att.size){
@@ -4071,24 +4114,53 @@ function newMonth(){
        <div class="field"><label>연도</label><input id="nm-y" type="number" value="${now.getFullYear()}"></div>
        <div class="field"><label>월</label><input id="nm-m" type="number" min="1" max="12" value="${now.getMonth()+1}"></div>
      </div>
-     <div class="field"><label>1인당 지원금</label>
+     <div class="field"><label>활동 유형</label>
+       <select id="nm-type" style="width:100%;">
+         <option value="movie">영화 관람</option>
+         <option value="event">행사 (송년회 등) — 영화 없음</option>
+       </select>
+     </div>
+     <div class="field"><label>지원금 방식</label>
+       <select id="nm-smode" style="width:100%;">
+         <option value="perPerson">참석자 기준 — 참석 인원 × 1인당</option>
+         <option value="total">총액 고정 — 승인된 총액 그대로</option>
+       </select>
+     </div>
+     <div class="field" id="nm-pp-wrap"><label>1인당 지원금</label>
        <input id="nm-pp" type="text" inputmode="numeric" value="30,000" oninput="fmtNumInput(this)">
        <div style="font-size:11.5px;color:var(--ink3);margin-top:5px;line-height:1.6;">
-         한 달 쉬고 다음 달에 몰아서 활동하면 이월된 금액으로 올려 적으세요. (예: 한 달 이월 → 60,000)<br>
-         나중에 정산 탭에서도 바꿀 수 있습니다.
+         한 달 쉬고 다음 달에 몰아서 활동하면 이월된 금액으로 올려 적으세요. (예: 한 달 이월 → 60,000)
        </div>
-     </div>`,
+     </div>
+     <div class="field" id="nm-total-wrap" style="display:none;"><label>지원금 총액</label>
+       <input id="nm-total" type="text" inputmode="numeric" value="0" oninput="fmtNumInput(this)">
+       <div style="font-size:11.5px;color:var(--ink3);margin-top:5px;line-height:1.6;">
+         이월 신청서에 적은 총액을 그대로 넣으세요. 참석 인원이 달라져도 이 금액이 기준이 됩니다.
+       </div>
+     </div>
+     <p style="font-size:11.5px;color:var(--ink3);">모두 나중에 정산 탭에서 바꿀 수 있습니다.</p>`,
     async ()=>{
       const y=document.getElementById('nm-y').value, mo=String(document.getElementById('nm-m').value).padStart(2,'0');
       const id=`${y}-${mo}`;
       if(monthIndex.includes(id)){toast('이미 존재하는 달입니다');return false;}
       const perPerson=getNumVal(document.getElementById('nm-pp'))||30000;
-      const obj={id,label:labelOf(id),movies:[],records:{},finance:{perPerson,movieCosts:[],partyExpenses:{},excessPayments:{}},reviewers:{},confirmed:false,prevMonthExclusions:[],revealed:{}};
+      const type=document.getElementById('nm-type').value;
+      const subsidyMode=document.getElementById('nm-smode').value;
+      const subsidyTotal=getNumVal(document.getElementById('nm-total'))||0;
+      if(subsidyMode==='total' && subsidyTotal<=0){ toast('지원금 총액을 입력해주세요'); return false; }
+      const obj={id,label:labelOf(id),type,movies:[],records:{},finance:{perPerson,subsidyMode,subsidyTotal,movieCosts:[],partyExpenses:{},excessPayments:{}},reviewers:{},confirmed:false,prevMonthExclusions:[],revealed:{}};
       monthIndex.unshift(id); monthIndex.sort().reverse();
       await saveIndex(); await sSet(mKey(id),obj);
       curId=id; cur=obj; monthCache[id]=obj; baselineMonth=JSON.stringify(obj); buildMonthSelect(); renderAll();
-      toast(`${labelOf(id)} 생성됨 · 1인당 지원금 ${fmt(perPerson)}원`);
+      toast(`${labelOf(id)} 생성됨 · ${type==='event'?'행사':'영화 관람'} · 지원금 ${subsidyMode==='total'?fmt(subsidyTotal)+'원(총액)':fmt(perPerson)+'원/인'}`);
     },'만들기','primary');
+  // 지원금 방식에 따라 입력칸을 바꿔 보여준다
+  const sm=document.getElementById('nm-smode');
+  if(sm) sm.onchange=()=>{
+    const total=sm.value==='total';
+    document.getElementById('nm-pp-wrap').style.display=total?'none':'';
+    document.getElementById('nm-total-wrap').style.display=total?'':'none';
+  };
 }
 function delMonth(){
   if(monthIndex.length<=1){toast('마지막 달은 삭제할 수 없습니다');return;}
@@ -4449,7 +4521,21 @@ document.getElementById('addMemberBtn').onclick=addMember;
 document.getElementById('reviewMovie').onchange=()=>{drawWheel();renderReviewerBoard();};
 document.getElementById('spinBtn').onclick=spin;
 document.getElementById('modalBg').onclick=e=>{if(e.target.id==='modalBg')closeModal();};
-document.getElementById('finPerPerson').addEventListener('change',e=>{if(!isAdmin())return;cur.finance.perPerson=getNumVal(e.target)||30000;saveMonth();renderFinance();});
+document.getElementById('finPerPerson').addEventListener('change',e=>{
+  if(!isAdmin())return;
+  const v=getNumVal(e.target);
+  if(isTotalSubsidy()) cur.finance.subsidyTotal=Math.max(0,v);
+  else cur.finance.perPerson=v||30000;
+  saveMonth();renderFinance();
+});
+document.getElementById('finSubsidyMode').addEventListener('change',e=>{
+  if(!isAdmin())return;
+  cur.finance.subsidyMode=e.target.value;
+  // 총액으로 바꾸면 지금 기준 금액을 초기값으로 채워둔다
+  if(e.target.value==='total' && !Number(cur.finance.subsidyTotal))
+    cur.finance.subsidyTotal=(Number(cur.finance.perPerson)||30000)*activeMembers().length;
+  saveMonth();renderFinance();
+});
 document.getElementById('saveEpVoucherBtn').onclick=()=>{
   const url=document.getElementById('epVoucherInput').value.trim();
   cur.finance.epVoucherUrl=url;
