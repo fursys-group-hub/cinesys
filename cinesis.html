@@ -604,6 +604,8 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:8px;">
         <h2 style="margin-bottom:0"><span class="ic">🎬</span> 영화 라이브러리 <span id="libCount" style="font-size:14px;font-weight:500;color:var(--ink3);"></span></h2>
         <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn sm ghost" id="yearStatsBtn" title="연간 참석·후기 기록">📊 연간 기록</button>
+          <button class="btn sm ghost" id="awardsBtn" title="올해의 영화 투표">🏆 어워즈</button>
           <button class="btn sm" id="refreshLibraryBtn" title="TMDB·KOBIS 데이터 새로고침">↻ 새로고침</button>
           <button class="btn sm primary admin-only" id="addLibMovieBtn">＋ 영화 등록</button>
         </div>
@@ -1981,6 +1983,157 @@ function openMemberVoteModal(memberId){
 }
 
 function renderActivity(){ applyMonthType(); renderMovies(); renderActivityTable(); updateSummaryCards(); renderConfirmSection(); renderRouletteSectionVisibility(); equalizeTopPanels(); renderActivityDateBanner(); renderVoteSection(); }
+
+/* ── 연간 활동 기록 ── 시상(개근상·리뷰어상·참여상) 근거로 쓴다 */
+function yearStats(year){
+  const ids = monthIndex.filter(id => id.startsWith(year + '-')).sort();
+  const rows = activeMembers().map(m => {
+    let att = 0, abs = 0, none = 0, rev = 0;
+    ids.forEach(id => {
+      const mo = monthCache[id]; if(!mo) return;
+      const r = (mo.records || {})[m.id];
+      if(!r || (r.attending !== true && r.attending !== false)) none++;
+      else if(r.attending === true) att++;
+      else abs++;
+      const reviewer = getMonthReviewer(id);
+      if(reviewer && reviewer.id === m.id) rev++;
+    });
+    return { name: m.name, att: att, abs: abs, none: none, rev: rev };
+  });
+  return { months: ids, rows: rows };
+}
+
+function openYearStatsModal(){
+  const year = (curId || '').slice(0, 4) || String(new Date().getFullYear());
+  const st = yearStats(year);
+  if(!st.months.length){
+    openModal('📊 연간 기록', '<div class="empty">기록이 없습니다.</div>', function(){}, '확인');
+    return;
+  }
+  const sorted = st.rows.slice().sort(function(a,b){
+    return b.att - a.att || b.rev - a.rev || a.name.localeCompare(b.name, 'ko');
+  });
+  const max = Math.max.apply(null, st.rows.map(function(r){ return r.att; }));
+  const monthLabel = st.months.map(function(m){ return Number(m.slice(5)) + '월'; }).join(', ');
+  const body =
+    '<p style="font-size:12.5px;color:var(--ink2);line-height:1.7;margin-bottom:12px;">' +
+      year + '년 활동 ' + st.months.length + '회 (' + monthLabel + ') 기준입니다.<br>참석이 많은 순으로 정렬했습니다.' +
+    '</p>' +
+    '<div style="max-height:340px;overflow:auto;">' +
+      '<table class="tbl" style="font-size:13px;"><thead><tr>' +
+        '<th>이름</th><th>참석</th><th>불참</th><th>미응답</th><th>후기 작성</th>' +
+      '</tr></thead><tbody>' +
+      sorted.map(function(r){
+        return '<tr><td class="name">' + esc(r.name) +
+          (r.att === max && max > 0 ? ' <span class="pill tr xs">개근</span>' : '') + '</td>' +
+          '<td><b>' + r.att + '</b></td><td>' + r.abs + '</td><td>' + r.none + '</td><td>' + r.rev + '</td></tr>';
+      }).join('') +
+      '</tbody></table></div>' +
+    '<button class="btn sm ghost" id="yearStatsCopy" style="margin-top:10px;font-size:11.5px;">📋 표 복사</button>';
+  openModal('📊 ' + year + '년 활동 기록', body, function(){}, '확인');
+  const cp = document.getElementById('yearStatsCopy');
+  if(cp) cp.onclick = function(){
+    const text = ['이름\t참석\t불참\t미응답\t후기']
+      .concat(sorted.map(function(r){ return [r.name, r.att, r.abs, r.none, r.rev].join('\t'); })).join('\n');
+    copyText(text, sorted.length + '명 기록을 복사했습니다 ✓');
+  };
+}
+
+/* ── 올해의 영화 어워즈 ── 라이브러리의 올해 관람작으로 투표한다 */
+const AWARD_KEY = function(y){ return 'cns-awards-' + y; };
+const awardsCache = {};
+async function loadAwards(year){
+  const d = await sGet(AWARD_KEY(year), null);
+  awardsCache[year] = d || { open: false, votes: {} };
+  return awardsCache[year];
+}
+function saveAwards(year){ return sSet(AWARD_KEY(year), awardsCache[year]); }
+function yearMovies(year){
+  return library.filter(function(e){ return String(e.watchedMonth || '').startsWith(year + '-'); })
+    .sort(function(a,b){ return String(a.watchedMonth).localeCompare(String(b.watchedMonth)); });
+}
+
+async function openAwardsModal(){
+  const year = (curId || '').slice(0, 4) || String(new Date().getFullYear());
+  const aw = await loadAwards(year);
+  const movies = yearMovies(year);
+  if(!movies.length){
+    openModal('🏆 어워즈', '<div class="empty">올해 관람한 영화가 없습니다.</div>', function(){}, '확인');
+    return;
+  }
+  const myId = currentUser ? currentUser.memberId : null;
+  const mine = myId ? (aw.votes[myId] || null) : null;
+  const tally = {};
+  Object.keys(aw.votes || {}).forEach(function(k){
+    const v = aw.votes[k];
+    if(v && v.movieId) tally[v.movieId] = (tally[v.movieId] || 0) + 1;
+  });
+  const total = Object.keys(aw.votes || {}).length;
+  const ranked = movies.map(function(m){ return { m: m, n: tally[m.id] || 0 }; })
+    .sort(function(a,b){ return b.n - a.n; });
+
+  let voteUI;
+  if(!myId) voteUI = '<div class="empty">내 이름을 선택하면 투표할 수 있습니다.</div>';
+  else if(!aw.open) voteUI = '<div style="font-size:12.5px;color:var(--ink3);">아직 투표가 열리지 않았습니다.</div>';
+  else voteUI =
+    '<div class="field"><label>올해의 영화</label><select id="awMovie" style="width:100%;">' +
+      movies.map(function(m){
+        return '<option value="' + esc(m.id) + '"' + (mine && mine.movieId === m.id ? ' selected' : '') + '>' +
+          esc(m.title) + ' (' + Number(String(m.watchedMonth || '').slice(5)) + '월)</option>';
+      }).join('') +
+    '</select></div>' +
+    '<div class="field"><label>한줄평 (선택)</label>' +
+      '<input id="awComment" type="text" maxlength="60" value="' + esc((mine && mine.comment) || '') +
+      '" placeholder="예: 올해 가장 오래 남은 장면"></div>';
+
+  const comments = Object.keys(aw.votes || {}).filter(function(k){ return aw.votes[k] && aw.votes[k].comment; });
+  const resultUI =
+    '<div style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;margin:14px 0 6px;">현재 집계 · ' + total + '명 참여</div>' +
+    '<div style="max-height:200px;overflow:auto;">' +
+      ranked.map(function(x, i){
+        const lead = (i === 0 && x.n > 0);
+        return '<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--line);">' +
+          '<span style="width:18px;font-weight:700;color:' + (lead ? 'var(--sepia-hi)' : 'var(--ink3)') + ';">' + (i+1) + '</span>' +
+          '<span style="flex:1;font-size:13px;' + (lead ? 'font-weight:700;' : '') + '">' + esc(x.m.title) + '</span>' +
+          '<span style="font-size:12px;color:var(--ink3);">' + x.n + '표</span>' +
+        '</div>';
+      }).join('') +
+    '</div>' +
+    (comments.length
+      ? '<div style="font-size:10px;font-weight:700;color:var(--ink3);letter-spacing:.8px;margin:12px 0 5px;">한줄평</div>' +
+        '<div style="max-height:150px;overflow:auto;font-size:12.5px;line-height:1.7;">' +
+        comments.map(function(k){
+          const v = aw.votes[k];
+          const mem = members.find(function(x){ return x.id === k; });
+          const mv = movies.find(function(x){ return x.id === v.movieId; });
+          return '<div style="padding:4px 0;border-bottom:1px solid var(--line);"><b>' + esc(mem ? mem.name : '') + '</b> · ' +
+            esc(mv ? mv.title : '') + '<br><span style="color:var(--ink2);">' + esc(v.comment) + '</span></div>';
+        }).join('') + '</div>'
+      : '');
+
+  const adminUI = isAdmin()
+    ? '<div style="margin-top:12px;"><button class="btn sm ' + (aw.open ? 'ghost' : 'primary') + '" id="awToggle" style="font-size:11.5px;">' +
+      (aw.open ? '투표 마감' : '투표 열기') + '</button></div>'
+    : '';
+
+  const canVote = !!(myId && aw.open);
+  openModal('🏆 ' + year + ' 씨네시스 어워즈', voteUI + resultUI + adminUI,
+    async function(){
+      if(!canVote) return;
+      const mv = document.getElementById('awMovie'); if(!mv) return;
+      aw.votes[myId] = { movieId: mv.value, comment: (document.getElementById('awComment').value || '').trim() };
+      const ok = await saveAwards(year);
+      toast(ok ? '투표했습니다 ✓' : '저장에 실패했습니다');
+    }, canVote ? '투표하기' : '확인', 'primary');
+
+  const tg = document.getElementById('awToggle');
+  if(tg) tg.onclick = async function(){
+    aw.open = !aw.open;
+    await saveAwards(year);
+    closeModal();
+    openAwardsModal();
+  };
+}
 
 /* 달 유형 — 영화를 보지 않는 행사 달(송년회 등)을 따로 둔다.
    기존 달은 표시가 없으므로 영화 관람으로 본다. */
@@ -4500,6 +4653,8 @@ document.addEventListener('click',e=>{
   if(picker&&!picker.contains(e.target))closeMonthDropdown();
 });
 document.getElementById('addLibMovieBtn').onclick=()=>openAddLibraryModal();
+document.getElementById('yearStatsBtn').onclick=openYearStatsModal;
+document.getElementById('awardsBtn').onclick=openAwardsModal;
 document.getElementById('refreshLibraryBtn').onclick=async function(){
   const btn=this;
   btn.disabled=true;btn.textContent='↻ 조회 중…';
